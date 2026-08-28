@@ -20,6 +20,7 @@ captures/
 # Agent workspace artifacts
 .omo/
 .sisyphus/
+.dsh-edit-review.json
 
 # Kotlin
 .kotlin/

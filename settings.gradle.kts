@@ -23,3 +23,9 @@ dependencyResolutionManagement {
 rootProject.name = "JuHeShiYi"
 
 include(":app")
+
+// KMP shared kernel: domain / data / state live here, shared by Android and iOS.
+include(":shared")
+
+// iOS host app. Sources are written here but only buildable on macOS + Xcode.
+include(":iosApp")
