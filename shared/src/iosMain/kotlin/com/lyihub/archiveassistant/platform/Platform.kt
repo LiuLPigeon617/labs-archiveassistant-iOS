@@ -85,7 +85,7 @@ actual class BundledAssetReader {
    * [NSBundle.mainBundle] and then materialized into writable storage so downstream code can treat
    * them as ordinary files, matching the Android behavior.
    */
-  override suspend fun materialize(assetName: String, outputFileName: String): String? {
+  actual suspend fun materialize(assetName: String, outputFileName: String): String? {
     val store = platformFileStore()
     val destination = "${store.itemsDir}/$outputFileName"
     if (store.exists(destination)) return destination
