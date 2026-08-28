@@ -39,7 +39,17 @@ kotlin {
       api(libs.ktor.client.core)
     }
 
-    commonTest.dependencies { implementation(libs.junit) }
+    commonTest.dependencies {
+      implementation(kotlin("test"))
+      implementation(kotlin("test-common"))
+      implementation(kotlin("test-annotations-common"))
+      implementation(libs.kotlinx.coroutines.test)
+    }
+
+    jvmTest.dependencies {
+      implementation(kotlin("test-junit"))
+      implementation(libs.junit)
+    }
 
     androidMain.dependencies {
       implementation(libs.ktor.client.okhttp)
