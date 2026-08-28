@@ -1,0 +1,266 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1A0000020000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000001 /* AppDelegate.swift */; };
+		1A0000020000000000000002 /* ArchiveAssistantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000002 /* ArchiveAssistantApp.swift */; };
+		1A0000020000000000000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000003 /* ContentView.swift */; };
+		1A0000020000000000000004 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000004 /* SettingsView.swift */; };
+		1A0000020000000000000005 /* MainWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000005 /* MainWorkspaceView.swift */; };
+		1A0000020000000000000006 /* ComposeHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000006 /* ComposeHostingViewController.swift */; };
+		1A0000020000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000007 /* Assets.xcassets */; };
+		1A0000020000000000000008 /* SharedStateBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000008 /* SharedStateBridge.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1A0000010000000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		1A0000010000000000000002 /* ArchiveAssistantApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveAssistantApp.swift; sourceTree = "<group>"; };
+		1A0000010000000000000003 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1A0000010000000000000004 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1A0000010000000000000005 /* MainWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWorkspaceView.swift; sourceTree = "<group>"; };
+		1A0000010000000000000006 /* ComposeHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeHostingViewController.swift; sourceTree = "<group>"; };
+		1A0000010000000000000008 /* SharedStateBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStateBridge.swift; sourceTree = "<group>"; };
+		1A0000010000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		1A0000010000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		1A0000030000000000000001 /* 聚合拾遗.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "聚合拾遗.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1A0000040000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1A0000050000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				1A0000010000000000000002 /* ArchiveAssistantApp.swift */,
+				1A0000010000000000000003 /* ContentView.swift */,
+				1A0000010000000000000005 /* MainWorkspaceView.swift */,
+				1A0000010000000000000004 /* SettingsView.swift */,
+				1A0000010000000000000006 /* ComposeHostingViewController.swift */,
+				1A0000010000000000000008 /* SharedStateBridge.swift */,
+				1A0000010000000000000001 /* AppDelegate.swift */,
+				1A0000010000000000000007 /* Assets.xcassets */,
+				1A0000010000000000000009 /* Info.plist */,
+			);
+			sourceTree = "<group>";
+		};
+		1A0000050000000000000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1A0000030000000000000001 /* 聚合拾遗.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1A0000060000000000000001 /* iosApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A0000070000000000000001 /* Build configuration list for PBXNativeTarget "iosApp" */;
+			buildPhases = (
+				1A0000080000000000000001 /* Run Script: Build SharedKit */,
+				1A0000040000000000000002 /* Sources */,
+				1A0000040000000000000001 /* Frameworks */,
+				1A0000090000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iosApp;
+			productName = iosApp;
+			productReference = 1A0000030000000000000001 /* 聚合拾遗.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1A0000100000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					1A0000060000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = 1A0000070000000000000002 /* Build configuration list for PBXProject "iosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				"zh-Hans",
+				Base,
+			);
+			mainGroup = 1A0000050000000000000001;
+			productRefGroup = 1A0000050000000000000002 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1A0000060000000000000001 /* iosApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1A0000090000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000020000000000000007 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		1A0000080000000000000001 /* Run Script: Build SharedKit */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script: Build SharedKit";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\n# Builds the Kotlin Multiplatform framework (SharedKit.xcframework) that this app links against.\n# Requires macOS with Xcode command line tools installed.\ncd \"$SRCROOT/../..\"\n./gradlew :shared:assembleSharedKitXCFramework\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A0000040000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1A0000020000000000000002 /* ArchiveAssistantApp.swift in Sources */,
+				1A0000020000000000000003 /* ContentView.swift in Sources */,
+				1A0000020000000000000005 /* MainWorkspaceView.swift in Sources */,
+				1A0000020000000000000004 /* SettingsView.swift in Sources */,
+				1A0000020000000000000006 /* ComposeHostingViewController.swift in Sources */,
+				1A0000020000000000000008 /* SharedStateBridge.swift in Sources */,
+				1A0000020000000000000001 /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		1A0000110000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		1A0000110000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		1A0000110000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lyihub.archiveassistant;
+				PRODUCT_NAME = "聚合拾遗";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		1A0000110000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lyihub.archiveassistant;
+				PRODUCT_NAME = "聚合拾遗";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1A0000070000000000000001 /* Build configuration list for PBXNativeTarget "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000110000000000000003 /* Debug */,
+				1A0000110000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		1A0000070000000000000002 /* Build configuration list for PBXProject "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A0000110000000000000001 /* Debug */,
+				1A0000110000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1A0000100000000000000001 /* Project object */;
+}
