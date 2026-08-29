@@ -11,8 +11,14 @@ import kotlinx.coroutines.flow.Flow
 interface ContentSource {
   val displayName: String?
 
+  /** Stable identifier for logging and for equality checks on clipboard snapshots. */
+  val sourceKey: String
+
   suspend fun openRead(): ByteArray?
 }
+
+/** Resolves a persisted source string back into a [ContentSource]. */
+expect fun resolveContentSource(key: String): ContentSource?
 
 /**
  * App-private file storage.

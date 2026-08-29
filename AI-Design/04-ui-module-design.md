@@ -1,14 +1,18 @@
 # UI Module Design
 
+> **Superseded notice:** This document described the Android-first cycle. The project has migrated to a Kotlin Multiplatform shared kernel with an iOS-first app (`:iosApp`, iPhone + iPad); the legacy `:app` Android app is frozen except bug fixes. See [07-ios-migration-plan.md](./07-ios-migration-plan.md). The iOS shell is native SwiftUI; Compose Multiplatform content panes are bridged via `UIViewControllerRepresentable`. Content below that is still valid is preserved; Android/foldable-specific references are annotated.
+
 Source prototype: local high-fidelity prototype `knowledge-curation-app-11.html`. UI references include title `聚合拾遗` near line 246, parser near line 251, detail tabs near line 293, settings controls near line 318, and card or topic modals near line 389.
 
-Android repo references:
+Repo references:
 
-- `app/build.gradle.kts` already includes Compose UI, Material3, preview tooling, and Compose UI test libraries.
-- `app/src/main/java/com/lyihub/archiveassistant/MainActivity.kt` should later host the app shell inside `ArchiveAssistantTheme`.
-- Instrumented UI tests should live under `app/src/androidTest/java/com/lyihub/archiveassistant/`.
+- Legacy Android: `app/build.gradle.kts` includes Compose UI, Material3, preview tooling, and Compose UI test libraries; `MainActivity.kt` hosted the Android app shell inside `ArchiveAssistantTheme`; instrumented UI tests lived under `app/src/androidTest/java/com/lyihub/archiveassistant/`. The `:app` module is frozen except bug fixes.
+- iOS-first: `:iosApp` Xcode project + Swift sources (builds only on macOS). The shell is native SwiftUI (`WindowGroup`, `NavigationSplitView` for iPad, multi-window). Settings are native SwiftUI (Form, Picker, SecureField, SF Symbols). Home/detail/memorial content panes are Compose Multiplatform.
+- Compose is bridged to SwiftUI via `UIViewControllerRepresentable` in `ComposeHostingViewController.swift`. Known constraint: `ComposeUIViewController` gives no reliable intrinsic content size, so explicit sizing is required or the view collapses to zero height.
 
 ## Compose Components
+
+On iOS the Compose components render inside the `ComposeHostingViewController` bridge; Settings itself is native SwiftUI (Form, Picker, SecureField, SF Symbols). The component list below describes the Compose content panes (home, detail, memorial) plus the legacy Android UI:
 
 - `ArchiveAssistantApp`: top-level state holder for pane, selected topic, selected tab, settings, and modal state.
 - `HomePane`: title, subtitle, parser card, classify button, recent topic list, create action, manage action.
@@ -37,7 +41,13 @@ Android repo references:
 - Do not center a modal across a hinge on foldables.
 - In expanded two-pane mode, place the pane divider outside hinge bounds or align pane split with the hinge when that produces two usable panels.
 
+## iOS Sizing Constraint
+
+Because `ComposeUIViewController` exposes no reliable intrinsic content size, every Compose content pane hosted on iOS must get explicit sizing (via SwiftUI frame or autolayout constraints); otherwise the view collapses to zero height. This applies to home, detail, and memorial panes.
+
 ## vivo foldable guideline decisions
+
+> These decisions apply to the legacy Android `:app` UI (frozen). On the iOS-first app, responsive layout is handled by SwiftUI `NavigationSplitView` on iPad rather than Android width classes/hinge bounds. The section is preserved for the Android legacy surface.
 
 Official reference attempted: `https://dev.vivo.com.cn/documentCenter/doc/597`. The fetch returned only the vivo open platform shell title, so exact page text was not available in this environment. Apply the required vivo foldable guideline wording as implementation decisions:
 
@@ -79,8 +89,9 @@ Supporting tags also exist for pane roots, settings fields, dialog controls, and
 ## Guardrails
 
 - Must NOT use WebView for the prototype.
-- Must NOT place buttons, input fields, tabs, or modal actions across the hinge.
-- Must NOT make real AI API calls from the `智能归纳` button in this implementation stage.
+- Must NOT place buttons, input fields, tabs, or modal actions across the hinge (legacy Android foldable surface).
+- Must NOT present a Compose view on iOS without explicit sizing.
+- The `智能归纳` button may make real AI calls: remote OpenAI-compatible `/chat/completions`, OpenAI Responses `/responses`, Anthropic `/messages`, Gemini `:generateContent`, or on-device LiteRT-LM inference via `LocalLlmEngine` (model GEMMA_4_E4B_IT; NPU/GPU/CPU backends with automatic fallback). This supersedes the earlier "Must NOT make real AI API calls from `智能归纳`" guardrail.
 
 ## Acceptance Checks
 

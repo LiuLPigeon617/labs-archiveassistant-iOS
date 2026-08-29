@@ -1,16 +1,18 @@
 # AI Engine Settings Design
 
+> **Superseded notice:** This document described the Android-first cycle. The project has migrated to a Kotlin Multiplatform shared kernel with an iOS-first app (`:iosApp`); the legacy `:app` Android app is frozen except bug fixes. See [07-ios-migration-plan.md](./07-ios-migration-plan.md). The "local-only / no network" guardrails below were false and are corrected: remote and on-device AI are implemented. Settings on iOS are native SwiftUI (Form, Picker, SecureField, SF Symbols). Content below that is still valid is preserved.
+
 Source prototype: local high-fidelity prototype `knowledge-curation-app-11.html`. Settings begin near line 308 with `配置应用设置`, engine controls near line 318, API mode near line 337, and local model fields near line 356.
 
-Android repo references:
+Repo references:
 
-- Settings UI should later live under `app/src/main/java/com/lyihub/archiveassistant/` and be shown from the Compose shell in `MainActivity.kt`.
-- `app/build.gradle.kts` currently has no network client dependency. Keep it that way for the first settings implementation.
-- Tests should use `app/src/test/java/com/lyihub/archiveassistant/` for masking rules and `app/src/androidTest/java/com/lyihub/archiveassistant/` for UI interaction.
+- Settings UI lives in the iOS app as native SwiftUI (`Form`, `Picker`, `SecureField`, SF Symbols) under `:iosApp`; the legacy Android settings lived under `app/src/main/java/com/lyihub/archiveassistant/` shown from the Compose shell in `MainActivity.kt`.
+- Settings state is driven by the shared kernel (`:shared`); on Android it used DataStore Preferences (multiplatform-settings is planned for KMP).
+- Tests use `:shared` JVM tests for masking rules and `:iosApp` SwiftUI preview/unit tests for interaction; legacy Android used `app/src/test` and `app/src/androidTest`.
 
 ## Local-Only Settings
 
-Settings are local UI state in the first implementation cycle. They can be remembered during process lifetime or stored locally in a later task if approved, but they must not be sent to a service.
+> Superseded: settings are no longer "local UI state only". Remote AI is implemented and real network calls happen on user-triggered classify/summarize.
 
 Cloud mode fields:
 
@@ -22,7 +24,7 @@ Cloud mode fields:
 Local mode fields:
 
 - Engine type: `本地模型`.
-- Local model: selector with labels from the prototype, such as `Qwen3-2B` and `Gemma 3 4B`.
+- Local model: on-device LiteRT-LM inference via `LocalLlmEngine` (initialize/generate/benchmark/release; NPU/GPU/CPU backends with automatic fallback), model `GEMMA_4_E4B_IT` (Gemma 4 E4B, ~3.66 GB, SHA-256 verified, downloaded from ModelScope). The prototype-era labels `Qwen3-2B` and `Gemma 3 4B` are superseded by the shipped `GEMMA_4_E4B_IT`.
 - Helper text may note that local model performance depends on device hardware.
 
 ## API Key Masking
@@ -34,20 +36,23 @@ Local mode fields:
 
 ## No Network Validation
 
-- The settings screen must not call the Base URL.
-- The save action only updates local state.
+> Superseded: settings no longer forbid network access. Remote AI is implemented — OpenAI-compatible `/chat/completions`, OpenAI Responses `/responses`, Anthropic `/messages`, Gemini `:generateContent` — and an `AiEndpointLatencyTester` performs real endpoint probes. What remains guarded is key handling and response parsing.
+
+- The settings screen itself must not call the Base URL on mere navigation or save; network calls are user-initiated.
+- The save action updates settings state.
 - Validation is limited to local field shape, such as empty string handling, if implemented.
-- There must be no real AI API calls from settings, tests, previews, or the classify button in this stage.
+- Remote responses are forced to strict JSON output; shared `extractJsonObject()` tolerates Markdown fences and surrounding prose.
+- API keys must still be masked and never written to logs, previews, fixtures, screenshots, docs, or test output.
 
 ## Guardrails
 
-- Must NOT add OkHttp, Retrofit, Ktor client, or other network dependencies for this settings task.
-- Must NOT make real AI API calls or real key validation calls.
-- Must NOT include real secrets or API keys.
-- Must NOT imply cloud mode is functional beyond local configuration storage.
+- Must NOT add OkHttp/HttpURLConnection or hand-rolled `org.json`; use Ktor Client (Darwin engine on iOS, OkHttp on Android/JVM) and kotlinx-serialization.
+- Must NOT make real AI API calls or key validation calls from the settings screen on mere navigation or save; calls are user-initiated.
+- Must NOT include real secrets or API keys in logs, previews, fixtures, screenshots, docs, or test output.
+- Must NOT claim cloud mode is functional without a valid configured endpoint; remote AI is real and does make network calls.
 
 ## Acceptance Checks
 
 - Unit tests verify API key masking, clearing, and cloud/local mode state transitions.
 - Instrumented tests switch between `API` and `本地模型` and confirm the expected fields appear.
-- A repo search confirms no network client dependency was added and no real AI API calls exist.
+- A repo search confirms the Ktor + kotlinx-serialization stack is in place and that settings-driven network calls are user-initiated rather than fired on navigation/save.

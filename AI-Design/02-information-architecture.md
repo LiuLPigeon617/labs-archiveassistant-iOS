@@ -1,12 +1,14 @@
 # Information Architecture
 
+> **Superseded notice:** This document described the Android-first cycle. The project has migrated to a Kotlin Multiplatform shared kernel (`:shared`) with an iOS-first app (`:iosApp`, iPhone + iPad); the legacy `:app` Android Compose app is frozen except bug fixes. See [07-ios-migration-plan.md](./07-ios-migration-plan.md) for the migration plan. Content below that is still valid is preserved; Android-specific references are annotated where they no longer reflect the iOS-first architecture.
+
 Source prototype: local high-fidelity prototype `knowledge-curation-app-11.html`. The body starts in `app-state-home` near line 230, then uses master, detail, settings, and manage panes around lines 243, 285, 308, and 376.
 
-Android repo references:
+Repo references:
 
-- `app/src/main/java/com/lyihub/archiveassistant/MainActivity.kt` is the later navigation host entry.
-- `app/build.gradle.kts` has `androidx.activity.compose` and Material3 for native navigation surfaces.
-- Existing tests under `app/src/test/java/com/lyihub/archiveassistant/` and `app/src/androidTest/java/com/lyihub/archiveassistant/` should grow with route and UI state checks.
+- Android legacy: `app/src/main/java/com/lyihub/archiveassistant/MainActivity.kt` was the later Android navigation host entry; `app/build.gradle.kts` has `androidx.activity.compose` and Material3 for native Android navigation surfaces. The `:app` module is frozen except bug fixes.
+- iOS-first: `:iosApp` is an Xcode project with native SwiftUI shell (`WindowGroup`, `NavigationSplitView` for iPad, multi-window). Content panes are Compose Multiplatform bridged via `UIViewControllerRepresentable` in `ComposeHostingViewController.swift`.
+- Existing `:app` tests under `app/src/test/java/com/lyihub/archiveassistant/` and `app/src/androidTest/java/com/lyihub/archiveassistant/` should grow with route and UI state checks; `:shared` JVM tests under `shared/src/jvmTest` verify the shared kernel on any OS.
 
 ## App States
 
@@ -55,7 +57,7 @@ Expanded layout applies when there is enough width for a two-pane master/detail 
 
 - Must NOT split an interactive control across a hinge or fold boundary.
 - Must NOT make expanded layout the only path. Compact phones remain first-class.
-- Must NOT make real AI API calls from navigation state changes.
+- Must NOT trigger AI requests from navigation state changes. Remote AI is implemented (OpenAI-compatible `/chat/completions`, OpenAI Responses `/responses`, Anthropic `/messages`, Gemini `:generateContent`) and on-device LiteRT-LM inference exists via `LocalLlmEngine`, but requests are user-initiated (classify/summarize), never side-effects of a navigation change.
 
 ## Acceptance Checks
 

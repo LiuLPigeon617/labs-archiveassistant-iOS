@@ -1,12 +1,14 @@
 # Data And State Model
 
+> **Superseded notice:** This document described the Android-first cycle. The project has migrated to a Kotlin Multiplatform shared kernel (`:shared`) with an iOS-first app (`:iosApp`); the legacy `:app` Android app is frozen except bug fixes. See [07-ios-migration-plan.md](./07-ios-migration-plan.md). The domain/state model now lives in `:shared` commonMain and is unit-tested on JVM. Content below that is still valid is preserved; Android-specific references are annotated.
+
 Source prototype: local high-fidelity prototype `knowledge-curation-app-11.html`. Data concepts come from parser input near line 251, recent topics near line 267, detail tabs near line 293, settings fields near line 318, and manage list near line 376.
 
-Android repo references:
+Repo references:
 
-- Use package roots under `app/src/main/java/com/lyihub/archiveassistant/`.
-- Keep pure model tests under `app/src/test/java/com/lyihub/archiveassistant/`.
-- Use Compose UI state from `MainActivity.kt` or a later `ui` package rather than adding platform storage in the first pass.
+- Domain models and state live under `shared/src/commonMain/kotlin/com/lyihub/archiveassistant/` (domain/, data/, platform/, state/), shared across Android and iOS.
+- Keep pure model tests under `shared/src/jvmTest/` (`./gradlew :shared:jvmTest` runs on any OS).
+- The state layer is `ArchiveAssistantStateStore` (a hand-written store using `mutableStateOf` + `CoroutineScope(Dispatchers.IO)`, no ViewModel/Hilt), being migrated; it has ~3 Android leaks to remove (Context for mock resources, Uri for document import, Log).
 
 ## Topic
 
@@ -49,7 +51,7 @@ Responsibilities:
 
 - Drives card feed and card modal.
 - Derives visible type labels from `contentType.label`; free-form per-item tags are not part of the model.
-- Uses local content only during the first implementation cycle.
+- Items and topics persist today (DataStore Preferences on Android; multiplatform-settings is planned for KMP). The earlier "local content only during the first implementation cycle" restriction no longer holds.
 - Keeps display preview text in `summary` and full modal or detail text in `fullText`.
 
 ## ContentType
@@ -84,12 +86,12 @@ Fields:
 Rules:
 
 - Treat `apiKeyAlias` as a local reference or display alias, not a raw secret.
-- Persist `engineType`, `baseUrl`, `modelName`, `apiKeyAlias`, and `localEndpoint` through typed DataStore Preferences keys.
-- Keep the raw API key entry UI-local; do not write raw API secrets to DataStore.
-- Do not perform real network validation.
-- Do not run no real AI API calls in tests or previews.
+- Persist `engineType`, `baseUrl`, `modelName`, `apiKeyAlias`, and `localEndpoint` through typed settings keys (DataStore Preferences on Android; multiplatform-settings planned for KMP).
+- Keep the raw API key entry UI-local; do not write raw API secrets to settings.
+- Remote AI is implemented and does perform real network calls when a user triggers classify/summarize: OpenAI-compatible `/chat/completions`, OpenAI Responses `/responses`, Anthropic `/messages`, Gemini `:generateContent`. This supersedes the earlier "no real network validation" guardrail.
+- Tests and previews use fake/mocked AI endpoints; real network calls only occur on user-triggered classify/summarize.
 
-Knowledge content persistence is deferred in this pass. `Topic` and `KnowledgeItem` values continue to come from in-memory seeded data because real import, storage, and migration requirements are outside the current local settings scope.
+Knowledge content persistence is in place for `Topic` and `KnowledgeItem` (DataStore Preferences on Android). The earlier "deferred in this pass / in-memory seeded data" statement no longer holds.
 
 ## AppPane
 
@@ -122,12 +124,16 @@ Responsibilities:
 - Keeps master/detail decisions outside individual feature components.
 - Gives UI components hinge-safe content bounds.
 
+## Six Ministries Taxonomy
+
+Topics follow the six-ministries taxonomy: 吏·名籍, 户·府库, 礼·典章, 兵·行令, 刑·稽核, 工·营造. It is an enum and IMMUTABLE at runtime. Topic create/rename/delete are rejected with the message `六部分类已固定，不能新建、重命名或删除。`. An unknown `topicId` resolves to 户·府库 (treasury). This supersedes the prototype-era `TopicManagePane` create/rename/delete flows.
+
 ## Guardrails
 
 - Must NOT persist real secrets in plain text.
-- Must NOT add remote AI response models until network integration is explicitly approved.
-- Must NOT let `KnowledgeItem` depend on Android UI classes.
-- Must NOT rename the documented fields away from the current Kotlin domain model without updating `Models.kt` and tests together.
+- Must NOT add remote AI response models before they are wired through the existing remote summarizer path.
+- Must NOT let `KnowledgeItem` depend on Android UI classes (it must stay in commonMain).
+- Must NOT rename the documented fields away from the current Kotlin domain model without updating the domain models and tests together.
 
 ## Acceptance Checks
 

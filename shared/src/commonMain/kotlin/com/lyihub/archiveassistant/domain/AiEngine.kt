@@ -101,3 +101,14 @@ sealed interface ClassificationResult {
 
   data object Unknown : ClassificationResult
 }
+
+enum class AppPane {
+  TOPICS,
+  MEMORIAL,
+  DETAIL,
+  SETTINGS,
+  MANAGE,
+  CLASSIFICATION_REVIEW,
+  CARD_DETAIL,
+  ARTICLE_READER,
+}

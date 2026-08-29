@@ -3,6 +3,9 @@ import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 plugins {
   alias(libs.plugins.kotlin.multiplatform)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.compose.multiplatform)
+  // Required since Kotlin 2.0.0 whenever the Compose Multiplatform plugin is applied.
+  alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.android.library)
 }
 
@@ -29,6 +32,8 @@ kotlin {
 
   sourceSets {
     commonMain.dependencies {
+      // compose-runtime supplies mutableStateOf / getValue / setValue, which the state store uses.
+      implementation(compose.runtime)
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.ktor.client.core)
       implementation(libs.ktor.client.content.negotiation)
@@ -53,14 +58,23 @@ kotlin {
 
     androidMain.dependencies {
       implementation(libs.ktor.client.okhttp)
-      implementation(libs.ksoup.html)
+      // Android keeps Jsoup: it is already bundled and battle-tested on this platform.
+      implementation(libs.jsoup)
+    }
+
+    // The jvm target compiles to bytecode, so it can use Jsoup directly too. Only the
+    // Kotlin/Native iOS target needs the multiplatform port (Ksoup).
+    jvmMain.dependencies {
+      implementation(libs.ktor.client.okhttp)
+      implementation(libs.jsoup)
     }
 
     if (isMacOs()) {
-      iosMain.dependencies { implementation(libs.ktor.client.darwin) }
+      iosMain.dependencies {
+        implementation(libs.ktor.client.darwin)
+        implementation(libs.ksoup.html)
+      }
     }
-
-    jvmMain.dependencies { implementation(libs.ktor.client.okhttp) }
   }
 }
 

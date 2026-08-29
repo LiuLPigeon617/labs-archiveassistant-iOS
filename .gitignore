@@ -21,6 +21,7 @@ captures/
 .omo/
 .sisyphus/
 .dsh-edit-review.json
+.dsh-edit-review-archive.json
 
 # Kotlin
 .kotlin/

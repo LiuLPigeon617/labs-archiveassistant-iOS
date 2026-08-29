@@ -1,51 +1,72 @@
 # Overall Implementation Plan
 
-Source prototype: local high-fidelity prototype `knowledge-curation-app-11.html`, especially the body shell near line 230, parser area near line 251, detail pane near line 285, settings pane near line 308, and manage pane near line 376.
+> **Status: superseded by the iOS migration.** This document described the original Android-only
+> build. The project is now migrating to a Kotlin Multiplatform shared kernel with an iOS-first app
+> (iPhone + iPad). See [07-ios-migration-plan.md](07-ios-migration-plan.md) for the current plan.
+> The Android `:app` module remains in the tree and still builds, but is no longer the target.
 
-Android target repo paths:
+## Current Target
 
-- `settings.gradle.kts`, root project `ArchiveAssistant`, app module `:app`.
-- `app/build.gradle.kts`, namespace and application id `com.lyihub.archiveassistant`, Compose and Material3 already enabled.
-- `app/src/main/java/com/lyihub/archiveassistant/MainActivity.kt`, current starter `Greeting` UI to replace in a later implementation task.
-- `app/src/test/java/com/lyihub/archiveassistant/ExampleUnitTest.kt` and `app/src/androidTest/java/com/lyihub/archiveassistant/ExampleInstrumentedTest.kt`, current test entry points.
+- **Primary**: iOS app (iPhone + iPad), native SwiftUI shell + Compose Multiplatform content panes.
+- **Shared**: Kotlin Multiplatform module (`:shared`) holding domain, data, and state.
+- **Android**: retained for the transition; not receiving new features.
 
-## Native Compose Scope
+## Module Layout
 
-Build a native Android Compose version of `聚合拾遗`. The app should reproduce the prototype's functional structure without embedding the HTML prototype or using a WebView. The first implementation should pause after the first usable module so real-device testing can happen before broadening the surface.
+| Module | Role |
+|---|---|
+| `:shared` | KMP kernel: `domain`, `data`, `state`, `platform`. Targets: `jvm` (verification), `android`, `iosArm64`, `iosSimulatorArm64`. |
+| `:app` | Legacy Android Compose app. Frozen except for bug fixes. |
+| `:iosApp` | Xcode project + Swift sources. Builds only on macOS. |
 
-## Feature Modules
+## Historical Android Scope
 
-- Home parser: accepts text, pasted content, links, file references, and image or document descriptions as local input objects. The prototype label is `拖拽文件、输入链接、纯文本，或直接从剪切板粘贴...`.
-- AI classify flow: provides the `智能归纳` action and assigns content to topics by local fake data or deterministic rules until a real engine is approved.
-- Recent topics: shows the `最近主题` list with create and all-topic entry points.
-- Detail reader: shows selected topic title, tabs for `全部`, `网页文章`, `图像截屏`, and `文档/PDF`, plus card feed and detail modal.
-- Topic manage: shows `全部主题`, create, rename, and basic topic actions.
-- Settings: shows `配置应用设置`, cloud or local engine mode, Base URL, API key, cloud model, and local model fields.
-- Foldable adaptation: uses a compact single-pane flow, expanded master/detail flow, and tabletop or half-open behavior when posture data is available.
+Below is retained for context on what the Android build covered.
 
-## Execution Order
+Original prototype: `knowledge-curation-app-11.html` — body shell near line 230, parser area near
+line 251, detail pane near line 285, settings pane near line 308, manage pane near line 376.
 
-1. Establish domain model and seed data for `Topic`, `KnowledgeItem`, `ContentType`, `AiEngineSettings`, and layout state.
-2. Replace the starter `Greeting` screen in `MainActivity.kt` with the home parser and topic list inside `ArchiveAssistantTheme`.
-3. Add detail pane and tabbed item filtering.
-4. Add card modal and topic create or rename modal.
-5. Add settings pane with local-only persistence and masked key display.
-6. Add manage pane and expanded layout behavior.
-7. Add foldable posture handling, hinge avoidance, and device QA coverage.
+Android feature modules that were built:
 
-## Guardrails
+- Home parser: accepted text, pasted content, links, file references, and image/document descriptions
+  as local input objects. Prototype label: `拖拽文件、输入链接、纯文本，或直接从剪切板粘贴...`.
+- AI classify flow: `智能归纳` action assigning content to topics.
+- Recent topics: `最近主题` list with create and all-topic entry points.
+- Detail reader: selected topic title, tabs `全部` / `网页文章` / `图像截屏` / `文档 PDF`, card feed,
+  detail modal.
+- Topic manage: `全部主题`, create, rename, basic topic actions.
+- Settings: `配置应用设置`, cloud or local engine mode, Base URL, API key, cloud model, local model.
+- Foldable adaptation: compact single-pane, expanded master/detail, tabletop and half-open behavior.
 
-- Must NOT edit app code during this documentation task.
-- Must NOT use a WebView or ship the HTML prototype as the runtime UI.
-- Must NOT make real AI API calls in the first implementation cycle.
-- Must NOT validate API keys against a remote network service.
+## Execution Order (historical, completed)
+
+1. Domain model and seed data for `Topic`, `KnowledgeItem`, `ContentType`, `AiEngineSettings`, layout state.
+2. Home parser and topic list replacing the starter `Greeting` screen.
+3. Detail pane and tabbed item filtering.
+4. Card modal and topic create/rename modal.
+5. Settings pane with local-only persistence and masked key display.
+6. Manage pane and expanded layout behavior.
+7. Foldable posture handling, hinge avoidance, device QA.
+
+## Superseded Guardrails
+
+The following guardrails applied to the first Android implementation cycle and **no longer hold**:
+
+| Old guardrail | Current reality |
+|---|---|
+| Must NOT make real AI API calls | Remote AI is implemented: OpenAI-compatible, OpenAI Responses, Anthropic, Gemini. |
+| Must NOT validate API keys against a remote service | A latency tester performs real endpoint probes. |
+| Classify by local fake data or deterministic rules only | `RemoteApiSmartSummarizer` performs real calls; local LiteRT-LM inference also exists. |
+| Defer knowledge item persistence | Items and topics persist to DataStore Preferences today. |
+
+Retained guardrails:
+
+- Must NOT embed a WebView or ship the HTML prototype as runtime UI.
 - Must NOT store or display real secrets in clear text after entry.
-- Persist AI engine settings locally with DataStore Preferences; defer topic and knowledge item persistence until real import and storage requirements are defined.
 - Must NOT invent features outside the prototype and plan.
 
-## Acceptance Checks
+## Acceptance Checks (current)
 
-- `test -d AI-Design` passes.
-- `ls AI-Design` shows exactly the seven markdown files listed in this documentation set.
-- A search for `Must NOT` and `no real AI API calls` finds guardrail text in the docs.
-- Later implementation must keep Compose and Material3 dependencies in `app/build.gradle.kts` and use `com.lyihub.archiveassistant` package paths.
+- `./gradlew :shared:compileKotlinJvm :shared:jvmTest` passes on any OS.
+- `./gradlew :shared:compileKotlinIosSimulatorArm64` passes on macOS.
+- iOS unsigned IPA builds on the GitHub Actions macOS runner.
