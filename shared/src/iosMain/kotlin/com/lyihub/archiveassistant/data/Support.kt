@@ -1,9 +1,10 @@
 package com.lyihub.archiveassistant.data
 
 import com.lyihub.archiveassistant.platform.ContentSource
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.reinterpret
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -13,22 +14,19 @@ import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.dataWithContentsOfURL
 
 /**
- * Copies bytes out of an [NSData] by index.
+ * Copies bytes out of an [NSData].
  *
- * Reads through the raw `bytes` pointer. A plain `pointer[i]` resolves to the Regex `get` operator
- * on some targets, so the pointer is bound to an explicit [CPointer] receiver first.
+ * `NSData.bytes` is typed `CPointer<out CPointed>?` and must be reinterpreted to `ByteVar` before
+ * indexing. The target is bound to an explicit [CPointer] receiver because a bare `pointer[i]` can
+ * otherwise bind to the Regex `get` operator.
  */
 @OptIn(ExperimentalForeignApi::class)
 private fun copyOut(data: NSData): ByteArray {
   val size = data.length.toInt()
   if (size == 0) return ByteArray(0)
-  val pointer: CPointer<ByteVar>? = data.bytes
+  val pointer: CPointer<ByteVar>? = data.bytes?.reinterpret()
   if (pointer == null) return ByteArray(0)
-  val out = ByteArray(size)
-  for (i in 0 until size) {
-    out[i] = pointer[i]
-  }
-  return out
+  return ByteArray(size) { index -> pointer[index] }
 }
 
 /** Reads a bundled resource into a [ByteArray]. */

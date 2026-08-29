@@ -61,7 +61,15 @@ private class IosFileStore : PlatformFileStore {
 
   override suspend fun readBytes(path: String): ByteArray? =
     runCatching {
-        SystemFileSystem.source(Path(path)).buffered().use { source -> source.readByteArray() }
+        val file = Path(path)
+        val size = SystemFileSystem.metadataOrNull(file)?.size
+        if (size == null || size == 0L) {
+          ByteArray(0)
+        } else {
+          SystemFileSystem.source(file).buffered().use { source ->
+            source.readByteArray(size.toInt())
+          }
+        }
       }
       .getOrNull()
 }
