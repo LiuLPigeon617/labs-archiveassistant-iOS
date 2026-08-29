@@ -1,24 +1,17 @@
 package com.lyihub.archiveassistant.data
 
 import com.lyihub.archiveassistant.platform.ContentSource
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.usePinned
+import com.lyihub.archiveassistant.platform.toByteArray
+import com.lyihub.archiveassistant.platform.toNSData
 import platform.Foundation.NSData
 import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.writeToFile
 
-@OptIn(ExperimentalForeignApi::class)
 actual fun writeMarkdownFile(itemsDir: String, title: String, content: String): String? {
   val safeTitle = title.replace(Regex("""[\\/:*?"<>|]"""), "_").take(60).ifBlank { "untitled" }
   val path = "$itemsDir/$safeTitle.md"
-
-  val bytes = content.encodeToByteArray()
-  if (bytes.isEmpty()) {
-    return if (NSData.data().writeToFile(path, atomically = true)) path else null
-  }
-  val data = bytes.usePinned { pinned -> NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong()) }
-  return if (data.writeToFile(path, atomically = true)) path else null
+  return if (content.encodeToByteArray().toNSData().writeToFile(path, atomically = true)) path
+  else null
 }
 
 /**
@@ -31,13 +24,5 @@ class IosContentSource(override val sourceKey: String) : ContentSource {
   override val displayName: String?
     get() = sourceKey.substringAfterLast('/').takeIf { it.isNotBlank() }
 
-  @OptIn(ExperimentalForeignApi::class)
-  override suspend fun openRead(): ByteArray? {
-    val data = NSData.dataWithContentsOfFile(sourceKey) ?: return null
-    val size = data.length.toInt()
-    if (size == 0) return ByteArray(0)
-    val result = ByteArray(size)
-    result.usePinned { pinned -> data.getBytes(pinned.addressOf(0), length = size.toULong()) }
-    return result
-  }
+  override suspend fun openRead(): ByteArray? = NSData.dataWithContentsOfFile(sourceKey)?.toByteArray()
 }

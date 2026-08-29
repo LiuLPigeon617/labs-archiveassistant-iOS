@@ -2,6 +2,8 @@ package com.lyihub.archiveassistant.platform
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.allocArrayOf
+import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSBundle
@@ -52,33 +54,37 @@ private class IosFileStore : PlatformFileStore {
 
   override suspend fun exists(path: String): Boolean = fileManager.fileExistsAtPath(path)
 
-  @OptIn(ExperimentalForeignApi::class)
-  override suspend fun writeBytes(path: String, bytes: ByteArray) {
-    if (bytes.isEmpty()) {
-      NSData.data().writeToFile(path, atomically = true)
-      return
-    }
-    val data =
-      bytes.usePinned { pinned ->
-        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
-      }
-    data.writeToFile(path, atomically = true)
-  }
+  override suspend fun writeBytes(path: String, bytes: ByteArray) =
+    bytes.toNSData().writeToFile(path, atomically = true)
 
   override suspend fun readBytes(path: String): ByteArray? =
     NSData.dataWithContentsOfFile(path)?.toByteArray()
 }
 
+/**
+ * Wraps a Kotlin [ByteArray] as [NSData].
+ *
+ * `memScoped` + `allocArrayOf` is the documented Kotlin/Native idiom: the C array is allocated in
+ * the scope and copied by NSData before the scope exits.
+ */
 @OptIn(ExperimentalForeignApi::class)
-private fun NSData.toByteArray(): ByteArray {
-  val size = length.toInt()
-  if (size == 0) return ByteArray(0)
-  val result = ByteArray(size)
-  result.usePinned { pinned -> getBytes(pinned.addressOf(0), length = size.toULong()) }
-  return result
-}
+internal fun ByteArray.toNSData(): NSData =
+  memScoped {
+    NSData.create(
+      bytes = allocArrayOf(this@toNSData),
+      length = this@toNSData.size.toULong(),
+    )
+  }
 
 @OptIn(ExperimentalForeignApi::class)
+internal fun NSData.toByteArray(): ByteArray {
+  val size = length.toInt()
+  if (size == 0) return ByteArray(0)
+  return ByteArray(size).apply {
+    usePinned { pinned -> this@toByteArray.getBytes(pinned.addressOf(0), length = size.toULong()) }
+  }
+}
+
 actual class BundledAssetReader {
   /**
    * Copies a resource from the app bundle into Application Support.
@@ -87,7 +93,7 @@ actual class BundledAssetReader {
    * [NSBundle.mainBundle] and then written into storage so downstream code can treat them as
    * ordinary files, matching the Android behavior.
    */
-  override suspend fun materialize(assetName: String, outputFileName: String): String? {
+  override actual suspend fun materialize(assetName: String, outputFileName: String): String? {
     val store = platformFileStore()
     val destination = "${store.itemsDir}/$outputFileName"
     if (store.exists(destination)) return destination
