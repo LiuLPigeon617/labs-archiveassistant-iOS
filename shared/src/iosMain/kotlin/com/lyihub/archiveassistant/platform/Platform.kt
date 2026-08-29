@@ -1,19 +1,12 @@
 package com.lyihub.archiveassistant.platform
 
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.allocArrayOf
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.usePinned
+import com.lyihub.archiveassistant.data.readUrlBytes
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSApplicationSupportDirectory
 import platform.Foundation.NSBundle
-import platform.Foundation.NSData
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
 import platform.Foundation.NSUserDomainMask
-import platform.Foundation.dataWithContentsOfFile
-import platform.Foundation.dataWithContentsOfURL
-import platform.Foundation.writeToFile
 
 actual fun platformLogger(): Logger = IosLogger()
 
@@ -29,9 +22,14 @@ private class IosLogger : Logger {
   }
 }
 
+/**
+ * iOS file storage backed by Application Support.
+ *
+ * Implemented with kotlinx-io rather than raw Foundation calls: it is a Kotlin Multiplatform
+ * library already used by this module, it needs no cinterop opt-in, and it keeps the byte handling
+ * identical to the JVM/Android implementations.
+ */
 private class IosFileStore : PlatformFileStore {
-  private val fileManager = NSFileManager.defaultManager
-
   private val appSupportDir: String by lazy {
     val paths =
       NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, true)
@@ -46,43 +44,19 @@ private class IosFileStore : PlatformFileStore {
 
   private fun ensureDirectory(name: String): String {
     val path = "$appSupportDir/$name"
-    if (!fileManager.fileExistsAtPath(path)) {
-      fileManager.createDirectoryAtPath(path, withIntermediateDirectories = true, null, null)
-    }
+    SystemFileSystem.createDirectories(Path(path))
     return path
   }
 
-  override suspend fun exists(path: String): Boolean = fileManager.fileExistsAtPath(path)
+  override suspend fun exists(path: String): Boolean =
+    runCatching { SystemFileSystem.exists(Path(path)) }.getOrDefault(false)
 
-  override suspend fun writeBytes(path: String, bytes: ByteArray) =
-    bytes.toNSData().writeToFile(path, atomically = true)
+  override suspend fun writeBytes(path: String, bytes: ByteArray) {
+    SystemFileSystem.sink(Path(path)).use { sink -> sink.write(bytes) }
+  }
 
   override suspend fun readBytes(path: String): ByteArray? =
-    NSData.dataWithContentsOfFile(path)?.toByteArray()
-}
-
-/**
- * Wraps a Kotlin [ByteArray] as [NSData].
- *
- * `memScoped` + `allocArrayOf` is the documented Kotlin/Native idiom: the C array is allocated in
- * the scope and copied by NSData before the scope exits.
- */
-@OptIn(ExperimentalForeignApi::class)
-internal fun ByteArray.toNSData(): NSData =
-  memScoped {
-    NSData.create(
-      bytes = allocArrayOf(this@toNSData),
-      length = this@toNSData.size.toULong(),
-    )
-  }
-
-@OptIn(ExperimentalForeignApi::class)
-internal fun NSData.toByteArray(): ByteArray {
-  val size = length.toInt()
-  if (size == 0) return ByteArray(0)
-  return ByteArray(size).apply {
-    usePinned { pinned -> this@toByteArray.getBytes(pinned.addressOf(0), length = size.toULong()) }
-  }
+    runCatching { SystemFileSystem.source(Path(path)).use { it.readByteArray() } }.getOrNull()
 }
 
 actual class BundledAssetReader {
@@ -104,8 +78,9 @@ actual class BundledAssetReader {
       NSBundle.mainBundle.URLForResource(name, withExtension = extension.takeIf { it.isNotEmpty() })
         ?: return null
 
-    val data = NSData.dataWithContentsOfURL(url) ?: return null
-    store.writeBytes(destination, data.toByteArray())
+    // Read the bundle resource through Foundation, then hand the bytes to the shared file store.
+    val bytes = readUrlBytes(url) ?: return null
+    store.writeBytes(destination, bytes)
     return destination
   }
 }
