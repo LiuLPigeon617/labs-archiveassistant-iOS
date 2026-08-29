@@ -2,6 +2,9 @@ package com.lyihub.archiveassistant.data
 
 import com.lyihub.archiveassistant.platform.ContentSource
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.CPointer
+import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSData
@@ -10,34 +13,39 @@ import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.dataWithContentsOfURL
 
 /**
- * Reads a bundled resource into a [ByteArray].
+ * Copies bytes out of an [NSData] by index.
  *
- * `NSData.dataWithContentsOfURL` is a Foundation factory method present in the Kotlin/Native
- * bindings. Bytes are read via `bytes`/`length` instead of `getBytes`, which would require a pinned
- * buffer and an experimental-API opt-in on every call site.
+ * Reads through the raw `bytes` pointer. A plain `pointer[i]` resolves to the Regex `get` operator
+ * on some targets, so the pointer is bound to an explicit [CPointer] receiver first.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal fun readUrlBytes(url: NSURL): ByteArray? {
-  val data = NSData.dataWithContentsOfURL(url) ?: return null
+private fun copyOut(data: NSData): ByteArray {
   val size = data.length.toInt()
   if (size == 0) return ByteArray(0)
-  val pointer = data.bytes ?: return null
-  return ByteArray(size) { index -> pointer[index] }
+  val pointer: CPointer<ByteVar>? = data.bytes
+  if (pointer == null) return ByteArray(0)
+  val out = ByteArray(size)
+  for (i in 0 until size) {
+    out[i] = pointer[i]
+  }
+  return out
 }
 
-@OptIn(ExperimentalForeignApi::class)
-private fun NSData.toByteArray(): ByteArray {
-  val size = length.toInt()
-  if (size == 0) return ByteArray(0)
-  val pointer = bytes ?: return ByteArray(0)
-  return ByteArray(size) { index -> pointer[index] }
+/** Reads a bundled resource into a [ByteArray]. */
+internal fun readUrlBytes(url: NSURL): ByteArray? {
+  val data = NSData.dataWithContentsOfURL(url) ?: return null
+  return copyOut(data)
 }
 
 actual fun writeMarkdownFile(itemsDir: String, title: String, content: String): String? {
   val safeTitle = title.replace(Regex("""[\\/:*?"<>|]"""), "_").take(60).ifBlank { "untitled" }
   val path = "$itemsDir/$safeTitle.md"
   return runCatching {
-      SystemFileSystem.sink(Path(path)).use { sink -> sink.write(content.encodeToByteArray()) }
+      val bytes = content.encodeToByteArray()
+      SystemFileSystem.sink(Path(path)).buffered().use { sink ->
+        sink.write(bytes, 0, bytes.size)
+        sink.flush()
+      }
       path
     }
     .getOrNull()
@@ -53,5 +61,8 @@ class IosContentSource(override val sourceKey: String) : ContentSource {
   override val displayName: String?
     get() = sourceKey.substringAfterLast('/').takeIf { it.isNotBlank() }
 
-  override suspend fun openRead(): ByteArray? = NSData.dataWithContentsOfFile(sourceKey)?.toByteArray()
+  override suspend fun openRead(): ByteArray? {
+    val data = NSData.dataWithContentsOfFile(sourceKey) ?: return null
+    return copyOut(data)
+  }
 }

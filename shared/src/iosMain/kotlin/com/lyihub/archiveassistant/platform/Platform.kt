@@ -1,6 +1,7 @@
 package com.lyihub.archiveassistant.platform
 
 import com.lyihub.archiveassistant.data.readUrlBytes
+import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSApplicationSupportDirectory
@@ -26,8 +27,8 @@ private class IosLogger : Logger {
  * iOS file storage backed by Application Support.
  *
  * Implemented with kotlinx-io rather than raw Foundation calls: it is a Kotlin Multiplatform
- * library already used by this module, it needs no cinterop opt-in, and it keeps the byte handling
- * identical to the JVM/Android implementations.
+ * library already used by this module, needs no cinterop opt-in, and keeps byte handling identical
+ * to the JVM/Android implementations.
  */
 private class IosFileStore : PlatformFileStore {
   private val appSupportDir: String by lazy {
@@ -52,22 +53,28 @@ private class IosFileStore : PlatformFileStore {
     runCatching { SystemFileSystem.exists(Path(path)) }.getOrDefault(false)
 
   override suspend fun writeBytes(path: String, bytes: ByteArray) {
-    SystemFileSystem.sink(Path(path)).use { sink -> sink.write(bytes) }
+    SystemFileSystem.sink(Path(path)).buffered().use { sink ->
+      sink.write(bytes, 0, bytes.size)
+      sink.flush()
+    }
   }
 
   override suspend fun readBytes(path: String): ByteArray? =
-    runCatching { SystemFileSystem.source(Path(path)).use { it.readByteArray() } }.getOrNull()
+    runCatching {
+        SystemFileSystem.source(Path(path)).buffered().use { source -> source.readByteArray() }
+      }
+      .getOrNull()
 }
 
-actual class BundledAssetReader {
-  /**
-   * Copies a resource from the app bundle into Application Support.
-   *
-   * iOS has no `res/raw` + `openRawResource` equivalent; bundle resources are located through
-   * [NSBundle.mainBundle] and then written into storage so downstream code can treat them as
-   * ordinary files, matching the Android behavior.
-   */
-  override actual suspend fun materialize(assetName: String, outputFileName: String): String? {
+/**
+ * Copies a bundled resource into Application Support.
+ *
+ * iOS has no `res/raw` + `openRawResource` equivalent; bundle resources are located through
+ * [NSBundle.mainBundle] and then written into storage so downstream code can treat them as
+ * ordinary files, matching the Android behavior.
+ */
+actual class BundledAssetReader actual constructor() {
+  actual suspend fun materialize(assetName: String, outputFileName: String): String? {
     val store = platformFileStore()
     val destination = "${store.itemsDir}/$outputFileName"
     if (store.exists(destination)) return destination
@@ -78,7 +85,6 @@ actual class BundledAssetReader {
       NSBundle.mainBundle.URLForResource(name, withExtension = extension.takeIf { it.isNotEmpty() })
         ?: return null
 
-    // Read the bundle resource through Foundation, then hand the bytes to the shared file store.
     val bytes = readUrlBytes(url) ?: return null
     store.writeBytes(destination, bytes)
     return destination
