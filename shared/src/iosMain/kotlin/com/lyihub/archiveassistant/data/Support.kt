@@ -1,11 +1,10 @@
 package com.lyihub.archiveassistant.data
 
 import com.lyihub.archiveassistant.platform.ContentSource
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.reinterpret
-import kotlinx.io.buffered
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
+import kotlinx.io.Buffer
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSData
@@ -14,19 +13,18 @@ import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.dataWithContentsOfURL
 
 /**
- * Copies bytes out of an [NSData].
+ * Copies an [NSData] payload into a Kotlin [ByteArray].
  *
- * `NSData.bytes` is typed `CPointer<out CPointed>?` and must be reinterpreted to `ByteVar` before
- * indexing. The target is bound to an explicit [CPointer] receiver because a bare `pointer[i]` can
- * otherwise bind to the Regex `get` operator.
+ * Uses `getBytes` into a pinned buffer rather than indexing the raw `bytes` pointer: indexing binds
+ * to the Regex `get` operator on some targets and yields a confusing MatchGroup type error.
  */
 @OptIn(ExperimentalForeignApi::class)
-private fun copyOut(data: NSData): ByteArray {
+internal fun copyOut(data: NSData): ByteArray {
   val size = data.length.toInt()
   if (size == 0) return ByteArray(0)
-  val pointer: CPointer<ByteVar>? = data.bytes?.reinterpret()
-  if (pointer == null) return ByteArray(0)
-  return ByteArray(size) { index -> pointer[index] }
+  val out = ByteArray(size)
+  out.usePinned { pinned -> data.getBytes(pinned.addressOf(0), length = size.toULong()) }
+  return out
 }
 
 /** Reads a bundled resource into a [ByteArray]. */
@@ -35,15 +33,27 @@ internal fun readUrlBytes(url: NSURL): ByteArray? {
   return copyOut(data)
 }
 
+/** Reads a file into a [ByteArray] using kotlinx-io. */
+internal fun readFileBytes(path: String): ByteArray? =
+  runCatching {
+      val buffer = Buffer()
+      SystemFileSystem.source(Path(path)).use { source -> source.transferTo(buffer) }
+      buffer.readByteArray()
+    }
+    .getOrNull()
+
+/** Writes [bytes] to [path] using kotlinx-io. */
+internal fun writeFileBytes(path: String, bytes: ByteArray) {
+  val buffer = Buffer()
+  buffer.write(bytes, 0, bytes.size)
+  SystemFileSystem.sink(Path(path)).use { sink -> buffer.transferTo(sink) }
+}
+
 actual fun writeMarkdownFile(itemsDir: String, title: String, content: String): String? {
   val safeTitle = title.replace(Regex("""[\\/:*?"<>|]"""), "_").take(60).ifBlank { "untitled" }
   val path = "$itemsDir/$safeTitle.md"
   return runCatching {
-      val bytes = content.encodeToByteArray()
-      SystemFileSystem.sink(Path(path)).buffered().use { sink ->
-        sink.write(bytes, 0, bytes.size)
-        sink.flush()
-      }
+      writeFileBytes(path, content.encodeToByteArray())
       path
     }
     .getOrNull()

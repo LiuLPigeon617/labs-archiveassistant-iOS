@@ -1,7 +1,8 @@
 package com.lyihub.archiveassistant.platform
 
+import com.lyihub.archiveassistant.data.readFileBytes
 import com.lyihub.archiveassistant.data.readUrlBytes
-import kotlinx.io.buffered
+import com.lyihub.archiveassistant.data.writeFileBytes
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import platform.Foundation.NSApplicationSupportDirectory
@@ -26,9 +27,8 @@ private class IosLogger : Logger {
 /**
  * iOS file storage backed by Application Support.
  *
- * Implemented with kotlinx-io rather than raw Foundation calls: it is a Kotlin Multiplatform
- * library already used by this module, needs no cinterop opt-in, and keeps byte handling identical
- * to the JVM/Android implementations.
+ * Byte handling is delegated to the shared kotlinx-io helpers in `data/Support.kt` so there is a
+ * single implementation across JVM, Android and iOS.
  */
 private class IosFileStore : PlatformFileStore {
   private val appSupportDir: String by lazy {
@@ -52,26 +52,9 @@ private class IosFileStore : PlatformFileStore {
   override suspend fun exists(path: String): Boolean =
     runCatching { SystemFileSystem.exists(Path(path)) }.getOrDefault(false)
 
-  override suspend fun writeBytes(path: String, bytes: ByteArray) {
-    SystemFileSystem.sink(Path(path)).buffered().use { sink ->
-      sink.write(bytes, 0, bytes.size)
-      sink.flush()
-    }
-  }
+  override suspend fun writeBytes(path: String, bytes: ByteArray) = writeFileBytes(path, bytes)
 
-  override suspend fun readBytes(path: String): ByteArray? =
-    runCatching {
-        val file = Path(path)
-        val size = SystemFileSystem.metadataOrNull(file)?.size
-        if (size == null || size == 0L) {
-          ByteArray(0)
-        } else {
-          SystemFileSystem.source(file).buffered().use { source ->
-            source.readByteArray(size.toInt())
-          }
-        }
-      }
-      .getOrNull()
+  override suspend fun readBytes(path: String): ByteArray? = readFileBytes(path)
 }
 
 /**
