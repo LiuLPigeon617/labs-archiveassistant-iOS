@@ -83,10 +83,14 @@ jobs:
 
       - name: Build SharedKit.xcframework
         run: |
+          echo "=== available shared tasks matching framework/assemble ==="
+          ./gradlew :shared:tasks --all 2>/dev/null | grep -i -E "framework|assemble" || true
+
           echo "=== assembling SharedKit.xcframework (device + simulator) ==="
           ./gradlew :shared:assembleSharedKitXCFramework --stacktrace
-          echo "=== artifact ==="
-          find shared/build/xcframework -maxdepth 2 -name "*.xcframework" -o -maxdepth 2 -type d | sort
+          echo "=== produced artifacts ==="
+          find shared/build -name "*.xcframework" -maxdepth 3 | sort || true
+          ls -lh shared/build/XCFrameworks 2>/dev/null || true
 
       - name: Resolve build configuration
         id: config
@@ -104,6 +108,9 @@ jobs:
           set -o pipefail
           CFG="${{ steps.config.outputs.configuration }}"
           DERIVED=build/DerivedData
+
+          echo "=== schemes and targets visible to xcodebuild ==="
+          xcodebuild -project iosApp/iosApp.xcodeproj -list || true
 
           echo "=== xcodebuild archive ( CODE_SIGNING_ALLOWED=NO ) ==="
           xcodebuild \

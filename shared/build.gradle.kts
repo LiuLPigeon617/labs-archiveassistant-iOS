@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
   alias(libs.plugins.kotlin.multiplatform)
@@ -18,14 +19,15 @@ kotlin {
 
   // iOS targets are declared only on macOS: Kotlin/Native can *configure* them
   // elsewhere but cannot link frameworks without the Apple SDK.
-  //
-  // Declaring a framework with the same baseName on both iOS targets makes the Kotlin plugin
-  // generate `assembleSharedKitXCFramework` automatically; the Xcode build phase calls that task.
   if (isMacOs()) {
+    val xcf = XCFramework("SharedKit")
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
       target.binaries.framework {
         baseName = "SharedKit"
         isStatic = true
+        // Registering each framework with the XCFramework is what generates the
+        // `assembleSharedKitXCFramework` task used by the Xcode build phase and CI.
+        xcf.add(this)
       }
     }
   }
