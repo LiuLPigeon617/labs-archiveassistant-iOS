@@ -1,0 +1,185 @@
+name: iOS Build (unsigned IPA)
+
+# Produces an UNSIGNED .ipa for build verification only.
+# An unsigned IPA cannot be installed on a physical device. Installing requires
+# a signing identity supplied via repository secrets; that step is intentionally
+# out of scope here so the workflow stays useful on forks and public repos.
+
+on:
+  push:
+    branches: [main, "agent/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Build configuration
+        required: false
+        default: Release
+        type: choice
+        options: [Debug, Release]
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dkotlin.incremental=false
+  JAVA_VERSION: "17"
+
+jobs:
+  ios-build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log runner environment
+        run: |
+          echo "=== runner ==="
+          echo "os:        ${{ runner.os }}"
+          echo "arch:      ${{ runner.arch }}"
+          echo "ref:       ${{ github.ref }}"
+          echo "sha:       ${{ github.sha }}"
+          echo "=== toolchain ==="
+          sw_vers
+          xcodebuild -version
+          xcode-select -p
+          echo "--- available Xcode versions ---"
+          ls /Applications | grep -i xcode || true
+          echo "--- available simulators (first 10) ---"
+          xcrun simctl list devices available | head -n 10 || true
+          echo "=== disk ==="
+          df -h /
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache Gradle and Kotlin/Native artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Verify shared kernel (JVM target)
+        run: |
+          echo "=== verifying shared kernel on jvm target ==="
+          ./gradlew :shared:compileKotlinJvm :shared:jvmTest --stacktrace
+
+      - name: Build SharedKit.xcframework
+        run: |
+          echo "=== assembling SharedKit.xcframework (device + simulator) ==="
+          ./gradlew :shared:assembleSharedKitXCFramework --stacktrace
+          echo "=== artifact ==="
+          find shared/build/xcframework -maxdepth 2 -name "*.xcframework" -o -maxdepth 2 -type d | sort
+
+      - name: Resolve build configuration
+        id: config
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CFG="${{ inputs.configuration }}"
+          else
+            CFG="Release"
+          fi
+          echo "configuration=$CFG" >> "$GITHUB_OUTPUT"
+          echo "=== using configuration: $CFG ==="
+
+      - name: Build unsigned .app
+        run: |
+          set -o pipefail
+          CFG="${{ steps.config.outputs.configuration }}"
+          DERIVED=build/DerivedData
+
+          echo "=== xcodebuild archive ( CODE_SIGNING_ALLOWED=NO ) ==="
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration "$CFG" \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "$DERIVED" \
+            -archivePath build/聚合拾遗.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE="" \
+            -allowProvisioningUpdates \
+            clean archive 2>&1 | tee build-xcodebuild.log | tail -n 40
+
+          echo "=== archive contents ==="
+          find build/聚合拾遗.xcarchive -maxdepth 3 -name "*.app" | sort
+
+      - name: Package unsigned .ipa
+        run: |
+          set -euo pipefail
+          CFG="${{ steps.config.outputs.configuration }}"
+          APP=$(find build/聚合拾遗.xcarchive -maxdepth 3 -name "*.app" -type d | head -n 1)
+
+          if [ -z "$APP" ]; then
+            echo "::error::No .app found inside the archive; cannot package an IPA."
+            exit 1
+          fi
+          echo "=== packaging app: $APP ==="
+
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+
+          IPA="build/聚合拾遗-unsigned-${{ github.sha }}.ipa"
+          # -y preserves symlinks; zip must run from build/ so Payload sits at the archive root.
+          (cd build && zip -qry "$(basename "$IPA")" Payload)
+
+          echo "=== ipa ==="
+          ls -lh "$IPA"
+          unzip -l "$IPA" | head -n 12
+
+          echo "ipa_path=$IPA" >> "$GITHUB_ENV"
+
+      - name: Summarize build
+        run: |
+          echo "=== BUILD SUMMARY ==="
+          echo "configuration : ${{ steps.config.outputs.configuration }}"
+          echo "ipa           : ${{ env.ipa_path }}"
+          echo "signing       : NONE (unsigned; not installable on a device)"
+          echo ""
+          echo "=== last warnings/errors from xcodebuild ==="
+          grep -E "(error|warning):" build-xcodebuild.log | tail -n 25 || echo "(none)"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: JuHeShiYi-unsigned-ipa-${{ steps.config.outputs.configuration }}
+          path: build/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build-xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-test-results
+          path: shared/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14

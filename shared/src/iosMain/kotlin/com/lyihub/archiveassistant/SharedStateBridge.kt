@@ -17,7 +17,19 @@ import kotlinx.coroutines.flow.onEach
  * SwiftUI. These helpers expose a plain-callback observer that Swift republishes into Combine.
  */
 object SharedStateBridgeKt {
-  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+  /**
+   * Called once from `AppDelegate.application(_:didFinishLaunchingWithOptions:)`.
+   *
+   * `Dispatchers.Main` on iOS requires the `kotlinx-coroutines-core` native main dispatcher, which
+   * needs the main run loop to be ready. Keeping initialization here means state observation only
+   * starts after UIApplication has finished launching.
+   */
+  fun doInitKoinIos() {
+    // No DI container is used (constructor defaults provide the seams), so this is a no-op hook
+    // retained for future platform initialization.
+  }
 
   fun makeStateStore(): SharedStateStore = SharedStateStore()
 

@@ -18,6 +18,9 @@ kotlin {
 
   // iOS targets are declared only on macOS: Kotlin/Native can *configure* them
   // elsewhere but cannot link frameworks without the Apple SDK.
+  //
+  // Declaring a framework with the same baseName on both iOS targets makes the Kotlin plugin
+  // generate `assembleSharedKitXCFramework` automatically; the Xcode build phase calls that task.
   if (isMacOs()) {
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
       target.binaries.framework {
