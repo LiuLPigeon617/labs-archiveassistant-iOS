@@ -145,12 +145,21 @@ private fun anthropicHeaders(apiKey: String): Map<String, String> =
     mapOf("x-api-key" to apiKey.trim(), "anthropic-version" to "2023-06-01")
   }
 
-internal fun mapRemoteError(error: Throwable): String =
-  when (error) {
-    is IllegalArgumentException -> "远程 AI Endpoint 无效，请检查配置"
-    is java.io.IOException -> error.message ?: "远程 AI 网络请求失败"
-    else -> error.message ?: "远程 AI 请求失败"
+/**
+ * Maps a transport failure to a user-visible message.
+ *
+ * Deliberately avoids `java.io.IOException`: that type is JVM-only and this code lives in
+ * commonMain, so it compiles for iOS too. Ktor wraps platform I/O failures per engine, so the
+ * message text is the most reliable cross-platform signal.
+ */
+internal fun mapRemoteError(error: Throwable): String {
+  val message = error.message
+  return when {
+    error is IllegalArgumentException -> "远程 AI Endpoint 无效，请检查配置"
+    message.isNullOrBlank() -> "远程 AI 请求失败"
+    else -> message
   }
+}
 
 // --- Provider request/response shapes ---
 

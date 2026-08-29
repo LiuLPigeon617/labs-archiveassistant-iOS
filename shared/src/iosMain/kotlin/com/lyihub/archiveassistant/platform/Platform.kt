@@ -4,13 +4,14 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSApplicationSupportDirectory
+import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSSearchPathForDirectoriesInDomains
-import platform.Foundation.NSStringFromClass
 import platform.Foundation.NSUserDomainMask
-import platform.foundation.NSBundle
-import platform.Foundation.NSURL
+import platform.Foundation.dataWithContentsOfFile
+import platform.Foundation.dataWithContentsOfURL
+import platform.Foundation.writeToFile
 
 actual fun platformLogger(): Logger = IosLogger()
 
@@ -26,17 +27,14 @@ private class IosLogger : Logger {
   }
 }
 
-@OptIn(ExperimentalForeignApi::class)
 private class IosFileStore : PlatformFileStore {
   private val fileManager = NSFileManager.defaultManager
 
-  private val appSupportDir: String =
-    NSSearchPathForDirectoriesInDomains(
-        NSApplicationSupportDirectory,
-        NSUserDomainMask,
-        true,
-      )
-      .firstOrNull() as? String ?: error("Cannot resolve Application Support directory")
+  private val appSupportDir: String by lazy {
+    val paths =
+      NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, true)
+    (paths.firstOrNull() as? String) ?: error("Cannot resolve Application Support directory")
+  }
 
   override val itemsDir: String
     get() = ensureDirectory("items")
@@ -54,24 +52,28 @@ private class IosFileStore : PlatformFileStore {
 
   override suspend fun exists(path: String): Boolean = fileManager.fileExistsAtPath(path)
 
+  @OptIn(ExperimentalForeignApi::class)
   override suspend fun writeBytes(path: String, bytes: ByteArray) {
-    val data = bytes.usePinned { pinned ->
-      NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+    if (bytes.isEmpty()) {
+      NSData.data().writeToFile(path, atomically = true)
+      return
     }
+    val data =
+      bytes.usePinned { pinned ->
+        NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
+      }
     data.writeToFile(path, atomically = true)
   }
 
-  override suspend fun readBytes(path: String): ByteArray? {
-    val data = NSData.dataWithContentsOfFile(path) ?: return null
-    return data.toByteArray()
-  }
+  override suspend fun readBytes(path: String): ByteArray? =
+    NSData.dataWithContentsOfFile(path)?.toByteArray()
 }
 
 @OptIn(ExperimentalForeignApi::class)
 private fun NSData.toByteArray(): ByteArray {
   val size = length.toInt()
+  if (size == 0) return ByteArray(0)
   val result = ByteArray(size)
-  if (size == 0) return result
   result.usePinned { pinned -> getBytes(pinned.addressOf(0), length = size.toULong()) }
   return result
 }
@@ -81,20 +83,20 @@ actual class BundledAssetReader {
   /**
    * Copies a resource from the app bundle into Application Support.
    *
-   * iOS has no `res/raw` + `openRawResource` equivalent; bundle resources are located via
-   * [NSBundle.mainBundle] and then materialized into writable storage so downstream code can treat
-   * them as ordinary files, matching the Android behavior.
+   * iOS has no `res/raw` + `openRawResource` equivalent; bundle resources are located through
+   * [NSBundle.mainBundle] and then written into storage so downstream code can treat them as
+   * ordinary files, matching the Android behavior.
    */
-  actual suspend fun materialize(assetName: String, outputFileName: String): String? {
+  override suspend fun materialize(assetName: String, outputFileName: String): String? {
     val store = platformFileStore()
     val destination = "${store.itemsDir}/$outputFileName"
     if (store.exists(destination)) return destination
 
-    val bundle = NSBundle.mainBundle
     val name = assetName.substringBeforeLast('.')
     val extension = assetName.substringAfterLast('.', "")
     val url =
-      bundle.URLForResource(name, withExtension = extension.ifEmpty { null }) ?: return null
+      NSBundle.mainBundle.URLForResource(name, withExtension = extension.takeIf { it.isNotEmpty() })
+        ?: return null
 
     val data = NSData.dataWithContentsOfURL(url) ?: return null
     store.writeBytes(destination, data.toByteArray())
