@@ -15,6 +15,7 @@
 		1A0000020000000000000006 /* ComposeHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000006 /* ComposeHostingViewController.swift */; };
 		1A0000020000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000007 /* Assets.xcassets */; };
 		1A0000020000000000000008 /* SharedStateBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000008 /* SharedStateBridge.swift */; };
+		1A0000020000000000000010 /* IosPlatformBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000010000000000000010 /* IosPlatformBootstrap.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 		1A0000010000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		1A0000010000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		1A0000030000000000000001 /* 聚合拾遗.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "聚合拾遗.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000010000000000000010 /* IosPlatformBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosPlatformBootstrap.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +55,7 @@
 				1A0000010000000000000001 /* AppDelegate.swift */,
 				1A0000010000000000000007 /* Assets.xcassets */,
 				1A0000010000000000000009 /* Info.plist */,
+				1A0000010000000000000010 /* IosPlatformBootstrap.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -163,6 +166,7 @@
 				1A0000020000000000000006 /* ComposeHostingViewController.swift in Sources */,
 				1A0000020000000000000008 /* SharedStateBridge.swift in Sources */,
 				1A0000020000000000000001 /* AppDelegate.swift in Sources */,
+				1A0000020000000000000010 /* IosPlatformBootstrap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
