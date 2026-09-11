@@ -17,6 +17,14 @@ captures/
 *.aab
 *.zip
 
+# iOS build artifacts
+# SharedKit.xcframework is produced by the Xcode build phase from :shared, so it is
+# never committed; it is staged here only as a link target.
+iosApp/Frameworks/
+iosApp/iosApp.xcodeproj/xcuserdata/
+iosApp/iosApp.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcarchive
+
 # Agent workspace artifacts
 .omo/
 .sisyphus/

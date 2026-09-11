@@ -4,36 +4,40 @@ package com.lyihub.archiveassistant.platform
  * Handlers implemented in Swift and injected at app launch.
  *
  * File I/O and bundle access are delegated to Swift rather than written against the Kotlin/Native
- * Foundation bindings. Swift has first-class `FileManager` and `Bundle` APIs, which removes an
+ * Foundation bindings: Swift has first-class `FileManager` and `Bundle` APIs, which removes an
  * entire class of cinterop signature errors and the need for `ExperimentalForeignApi` opt-ins.
+ *
+ * Payloads cross the boundary as Base64 strings rather than `ByteArray`. Swift's `KotlinByteArray`
+ * interop requires per-element accessors and is easy to get subtly wrong; Base64 uses plain
+ * `String` on both sides, with `Data(base64Encoded:)` on the Swift side.
  *
  * Swift installs these from `AppDelegate.application(_:didFinishLaunchingWithOptions:)` via
  * `IosPlatformBootstrap.install()`.
  */
 object IosNativeBridge {
   var exists: ((path: String) -> Boolean)? = null
-  var writeBytes: ((path: String, bytes: ByteArray) -> Unit)? = null
-  var readBytes: ((path: String) -> ByteArray?)? = null
+  var writeBase64: ((path: String, base64: String) -> Unit)? = null
+  var readBase64: ((path: String) -> String?)? = null
   var itemsDir: (() -> String)? = null
   var modelsDir: (() -> String)? = null
-  var bundleResourcePath: ((name: String, extension: String) -> String?)? = null
+  var bundleResourcePath: ((name: String, ext: String) -> String?)? = null
 
   /** True once Swift has installed the minimum set of handlers. */
   val isReady: Boolean
-    get() = exists != null && writeBytes != null && readBytes != null && itemsDir != null
+    get() = exists != null && writeBase64 != null && readBase64 != null && itemsDir != null
 
   internal fun callExists(path: String): Boolean = exists?.invoke(path) ?: false
 
   internal fun callWrite(path: String, bytes: ByteArray) {
-    val handler = writeBytes
+    val handler = writeBase64
     if (handler == null) {
-      println("[IosNativeBridge] writeBytes not installed; dropping write to $path")
+      println("[IosNativeBridge] writeBase64 not installed; dropping write to $path")
       return
     }
-    handler(path, bytes)
+    handler(path, bytes.toBase64())
   }
 
-  internal fun callRead(path: String): ByteArray? = readBytes?.invoke(path)
+  internal fun callRead(path: String): ByteArray? = readBase64?.invoke(path)?.fromBase64()
 }
 
 private class IosLogger : Logger {
@@ -80,8 +84,8 @@ actual class BundledAssetReader actual constructor() {
     if (store.exists(destination)) return destination
 
     val name = assetName.substringBeforeLast('.')
-    val extension = assetName.substringAfterLast('.', "")
-    val sourcePath = IosNativeBridge.bundleResourcePath?.invoke(name, extension) ?: return null
+    val ext = assetName.substringAfterLast('.', "")
+    val sourcePath = IosNativeBridge.bundleResourcePath?.invoke(name, ext) ?: return null
     val bytes = IosNativeBridge.callRead(sourcePath) ?: return null
 
     store.writeBytes(destination, bytes)

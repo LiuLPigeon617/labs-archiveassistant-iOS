@@ -1,12 +1,28 @@
 import SwiftUI
-import SharedKit
 import UIKit
 
 /// Bridges a Compose Multiplatform screen into SwiftUI.
 ///
+/// IMPORTANT — this is a placeholder boundary, not the finished bridge.
+///
+/// The Compose UI layer (home, detail, memorial reader) has not been migrated into `:shared` yet, so
+/// `SharedKit` does not expose a `ComposeUIViewController` factory. Until it does, this controller
+/// renders a SwiftUI stand-in so the app shell builds and runs, which is what the CI pipeline
+/// verifies.
+///
+/// When the Compose screens land in `:shared`, replace the body of `viewDidLoad` with:
+///
+///     let controller = MainViewControllerKt.makeComposeController(screen: screen)
+///     addChild(controller)
+///     view.addSubview(controller.view)
+///     controller.view.translatesAutoresizingMaskIntoConstraints = false
+///     NSLayoutConstraint.activate([... pin to all four edges ...])
+///     controller.didMove(toParent: self)
+///
+/// Note the sizing constraint that applies once Compose is hosted here:
 /// `ComposeUIViewController` does not provide a reliable intrinsic content size to SwiftUI, so the
-/// Compose view must be given an explicit, non-zero frame. Relying on self-sizing leads to a
-/// zero-height (collapsed) layout. See `MainWorkspaceView` for how a container supplies the size.
+/// Compose view must always be pinned with explicit constraints or given a concrete frame.
+/// Relying on self-sizing causes the view to collapse to zero height.
 final class ComposeHostingViewController: UIViewController {
   enum Screen {
     case home
@@ -27,17 +43,18 @@ final class ComposeHostingViewController: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    let composeController = MainViewControllerKt.makeComposeController(screen: screen)
-    addChild(composeController)
-    view.addSubview(composeController.view)
-    composeController.view.translatesAutoresizingMaskIntoConstraints = false
+
+    let host = UIHostingController(rootView: ComposePlaceholderView(screen: screen))
+    addChild(host)
+    view.addSubview(host.view)
+    host.view.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      composeController.view.topAnchor.constraint(equalTo: view.topAnchor),
-      composeController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-      composeController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      composeController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      host.view.topAnchor.constraint(equalTo: view.topAnchor),
+      host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
     ])
-    composeController.didMove(toParent: self)
+    host.didMove(toParent: self)
   }
 }
 
@@ -49,11 +66,14 @@ extension ComposeHostingViewController {
       ComposeHostingViewController(screen: screen)
     }
 
-    func updateUIViewController(_ uiViewController: ComposeHostingViewController, context: Context) {
+    func updateUIViewController(
+      _ uiViewController: ComposeHostingViewController,
+      context: Context
+    ) {
       // State flows through the shared Kotlin store, so no imperative update is needed here.
     }
 
-    /// Provide a concrete sizing proposal; without it SwiftUI may size the Compose subtree to 0.
+    /// Returns a concrete size because the hosted view has no usable intrinsic content size.
     func sizeThatFits(
       _ proposal: ProposedViewSize,
       uiViewController: ComposeHostingViewController,
@@ -64,5 +84,27 @@ extension ComposeHostingViewController {
         height: proposal.height ?? UIScreen.main.bounds.height
       )
     }
+  }
+}
+
+/// Stand-in for the Compose panes that are still to be migrated into `:shared`.
+private struct ComposePlaceholderView: View {
+  let screen: ComposeHostingViewController.Screen
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Image(systemName: screen == .home ? "archivebox" : "doc.text.magnifyingglass")
+        .font(.system(size: 44))
+        .foregroundStyle(.secondary)
+
+      Text(screen == .home ? "聚合拾遗" : "条目详情")
+        .font(.title2)
+
+      Text("Compose 面板迁移中")
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(uiColor: .systemGroupedBackground))
   }
 }

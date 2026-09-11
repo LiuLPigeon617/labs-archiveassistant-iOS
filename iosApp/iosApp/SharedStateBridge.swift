@@ -10,7 +10,7 @@ import SharedKit
 final class SharedStateBridge: ObservableObject {
   static let shared = SharedStateBridge()
 
-  private let store: ArchiveAssistantStateStore
+  private let store: SharedStateStore
   private var cancellables = Set<AnyCancellable>()
 
   // AI engine settings
