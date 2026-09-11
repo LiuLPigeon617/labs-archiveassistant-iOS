@@ -81,16 +81,32 @@ jobs:
           echo "=== verifying shared kernel on jvm target ==="
           ./gradlew :shared:compileKotlinJvm :shared:jvmTest --stacktrace
 
-      - name: Build SharedKit.xcframework
+      - name: Build and stage SharedKit.xcframework
         run: |
           echo "=== available shared tasks matching framework/assemble ==="
           ./gradlew :shared:tasks --all 2>/dev/null | grep -i -E "framework|assemble" || true
 
           echo "=== assembling SharedKit.xcframework (device + simulator) ==="
           ./gradlew :shared:assembleSharedKitXCFramework --stacktrace
-          echo "=== produced artifacts ==="
-          find shared/build -name "*.xcframework" -maxdepth 3 | sort || true
-          ls -lh shared/build/XCFrameworks 2>/dev/null || true
+
+          SRC=$(find shared/build/XCFrameworks -maxdepth 2 -name "SharedKit.xcframework" -type d | head -n 1)
+          if [ -z "$SRC" ]; then
+            echo "::error::SharedKit.xcframework not found under shared/build/XCFrameworks"
+            find shared/build -maxdepth 4 -name "*.xcframework" || true
+            exit 1
+          fi
+          echo "=== built: $SRC ==="
+          ls -la "$SRC"
+
+          # Xcode validates a linked .xcframework while planning the build graph, which happens
+          # before any run-script phase executes. The framework therefore has to exist at its
+          # referenced path before xcodebuild starts, not during the build.
+          DEST="iosApp/Frameworks"
+          mkdir -p "$DEST"
+          rm -rf "$DEST/SharedKit.xcframework"
+          cp -R "$SRC" "$DEST/"
+          echo "=== staged for Xcode: $DEST/SharedKit.xcframework ==="
+          ls -la "$DEST/SharedKit.xcframework"
 
       - name: Resolve build configuration
         id: config
