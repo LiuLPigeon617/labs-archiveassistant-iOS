@@ -1,3 +1,4 @@
+import SharedKit
 import UIKit
 
 /// Minimal app delegate.

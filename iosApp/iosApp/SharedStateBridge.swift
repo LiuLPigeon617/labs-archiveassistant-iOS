@@ -7,7 +7,9 @@ import SharedKit
 /// Kotlin `StateFlow` cannot be observed directly by SwiftUI, so this class subscribes through
 /// `IosAppBridge` and republishes into Combine. SwiftUI views bind to the `@Published` properties.
 ///
-/// Kotlin `Boolean` arrives as `KotlinBoolean`, hence the `.boolValue` reads below.
+/// Kotlin/Native mapping note: a `Boolean` returned from a class member surfaces as Swift `Bool`,
+/// whereas a `Boolean` inside a *function type* (such as the closure in `IosNativeBridge`) is boxed
+/// as `KotlinBoolean`. Hence no `.boolValue` here, but `KotlinBoolean(bool:)` there.
 final class SharedStateBridge: ObservableObject {
   static let shared = SharedStateBridge()
 
@@ -41,7 +43,7 @@ final class SharedStateBridge: ObservableObject {
         self.backendPreference = snapshot.backendPreference
         self.localModelStatusText = snapshot.localModelStatusText
         self.downloadProgress = Double(snapshot.downloadProgress)
-        self.isLocalModelDownloading = snapshot.isLocalModelDownloading.boolValue
+        self.isLocalModelDownloading = snapshot.isLocalModelDownloading
       }
     }
   }
@@ -50,9 +52,9 @@ final class SharedStateBridge: ObservableObject {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
   }
 
-  var canStartModel: Bool { store.canStartModel().boolValue }
+  var canStartModel: Bool { store.canStartModel() }
 
-  var canStopModel: Bool { store.canStopModel().boolValue }
+  var canStopModel: Bool { store.canStopModel() }
 
   func startModel() { store.startModel() }
 
