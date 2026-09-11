@@ -105,3 +105,44 @@ Auto Layout constraints. Do not rely on self-sizing.
 CI produces an **unsigned** IPA for verification only. Unsigned artifacts cannot be installed on
 physical devices without a signing step; distribution requires an Apple Developer certificate
 configured as repository secrets.
+
+Workflow: `.github/workflows/ios-build.yml`, running on `macos-15`.
+
+It runs, in order: shared kernel verification on the JVM target (fast-fail before any Xcode work),
+`assembleSharedKitXCFramework`, staging of the framework into `iosApp/Frameworks/`, then
+`xcodebuild archive` with `CODE_SIGNING_ALLOWED=NO`, and finally zips `Payload` into an unsigned
+`.ipa`. The IPA, the raw `xcodebuild` log and the shared test reports are uploaded as artifacts.
+
+**Ordering constraint (learned the hard way):** Xcode validates a linked `.xcframework` while
+planning the build graph, *before* any run-script phase executes. The framework must therefore exist
+at its referenced path before `xcodebuild` starts. Building it from inside a build phase cannot
+satisfy the reference and fails with `There is no XCFramework found at ...`. The workflow stages it
+in a dedicated step; the in-Xcode build phase remains for developers building from Xcode, and
+documents that a first build either needs the Gradle task run once or stages the framework for the
+next build.
+
+Status: the pipeline is green. It produces `JuHeShiYi-unsigned-ipa-Release` (~5.2 MB), containing
+`Payload/聚合拾遗.app/` with the executable, `Assets.car`, app icons and `Info.plist`.
+
+### Kotlin/Swift interop notes
+
+Two rules cost several CI cycles to establish; both are documented at the call sites:
+
+- A Kotlin `Boolean` returned from a **class member** surfaces as Swift `Bool`, but a `Boolean`
+  inside a **function type** (the closures in `IosNativeBridge`) is boxed as `KotlinBoolean`.
+- A Kotlin `object` is reached from Swift as `<Name>.shared`, whereas top-level functions export on a
+  file facade (`<FileName>Kt`) that did not resolve reliably. The Swift-facing entry points are
+  therefore an `object IosAppBridge`.
+
+Byte payloads cross the boundary as Base64 strings rather than `ByteArray`, because Swift's
+`KotlinByteArray` interop requires per-element accessors.
+
+## Remaining work
+
+1. Migrate the Compose UI layer into `:shared` and replace the placeholder hosted by
+   `ComposeHostingViewController`.
+2. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
+3. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
+4. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
+5. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+
