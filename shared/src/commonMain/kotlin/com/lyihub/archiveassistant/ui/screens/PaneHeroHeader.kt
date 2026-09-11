@@ -1,4 +1,5 @@
 package com.lyihub.archiveassistant.ui.screens
+import com.lyihub.archiveassistant.ui.theme.LocalImperialFonts
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +24,7 @@ import androidx.compose.ui.text.font.FontFamily
 internal fun PaneHeroHeader(
   title: String,
   description: String,
-  modifier: Modifier = Modifier,
-  displayFont: FontFamily = FontFamily.Serif,
+  modifier: Modifier = Modifier,
   showBackButton: Boolean = false,
   backIcon: (@Composable () -> Unit)? = null,
   onBack: (() -> Unit)? = null,
@@ -61,7 +61,7 @@ internal fun PaneHeroHeader(
     }
     Text(
       text = description,
-      style = MaterialTheme.typography.titleSmall.copy(fontFamily = displayFont),
+      style = MaterialTheme.typography.titleSmall.copy(fontFamily = LocalImperialFonts.current.display),
       color = Color.Black.copy(alpha = 0.78f),
       modifier = Modifier.fillMaxWidth().testTag("pane-hero-summary"),
     )
