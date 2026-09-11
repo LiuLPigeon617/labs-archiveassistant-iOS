@@ -57,6 +57,7 @@
 				1A0000010000000000000009 /* Info.plist */,
 				1A0000010000000000000010 /* IosPlatformBootstrap.swift */,
 			);
+			path = iosApp;
 			sourceTree = "<group>";
 		};
 		1A0000050000000000000002 /* Products */ = {
@@ -217,7 +218,7 @@
 				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = iosApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -246,7 +247,7 @@
 				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
-				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_FILE = iosApp/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
