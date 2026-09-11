@@ -35,7 +35,8 @@ enum IosPlatformBootstrap {
     bridge.modelsDir = { modelsDir }
 
     bridge.exists = { path in
-      fm.fileExists(atPath: path)
+      // Kotlin `Boolean` maps to `KotlinBoolean` in Swift, not to `Bool`.
+      KotlinBoolean(bool: fm.fileExists(atPath: path))
     }
 
     bridge.writeBase64 = { path, base64 in

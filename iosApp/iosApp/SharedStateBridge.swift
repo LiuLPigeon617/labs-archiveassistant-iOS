@@ -4,14 +4,14 @@ import SharedKit
 
 /// `ObservableObject` façade over the Kotlin shared state store.
 ///
-/// Kotlin `StateFlow` cannot be observed directly by SwiftUI, so this class subscribes via the
-/// `CoroutineScope`-backed collector exposed by `SharedStateBridgeKt` and republishes into Combine.
-/// SwiftUI views bind to the `@Published` properties below.
+/// Kotlin `StateFlow` cannot be observed directly by SwiftUI, so this class subscribes through
+/// `IosAppBridge` and republishes into Combine. SwiftUI views bind to the `@Published` properties.
+///
+/// Kotlin `Boolean` arrives as `KotlinBoolean`, hence the `.boolValue` reads below.
 final class SharedStateBridge: ObservableObject {
   static let shared = SharedStateBridge()
 
   private let store: SharedStateStore
-  private var cancellables = Set<AnyCancellable>()
 
   // AI engine settings
   @Published var engineType: String = "OPENAI_COMPATIBLE"
@@ -26,12 +26,12 @@ final class SharedStateBridge: ObservableObject {
   @Published var isLocalModelDownloading = false
 
   private init() {
-    store = SharedStateBridgeKt.makeStateStore()
+    store = IosAppBridge.shared.makeStateStore()
     observeState()
   }
 
   private func observeState() {
-    SharedStateBridgeKt.observeState(store: store) { [weak self] snapshot in
+    IosAppBridge.shared.observeState(store: store) { [weak self] snapshot in
       guard let self else { return }
       DispatchQueue.main.async {
         self.engineType = snapshot.engineType
@@ -41,7 +41,7 @@ final class SharedStateBridge: ObservableObject {
         self.backendPreference = snapshot.backendPreference
         self.localModelStatusText = snapshot.localModelStatusText
         self.downloadProgress = Double(snapshot.downloadProgress)
-        self.isLocalModelDownloading = snapshot.isLocalModelDownloading
+        self.isLocalModelDownloading = snapshot.isLocalModelDownloading.boolValue
       }
     }
   }
@@ -50,9 +50,9 @@ final class SharedStateBridge: ObservableObject {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
   }
 
-  var canStartModel: Bool { store.canStartModel() }
+  var canStartModel: Bool { store.canStartModel().boolValue }
 
-  var canStopModel: Bool { store.canStopModel() }
+  var canStopModel: Bool { store.canStopModel().boolValue }
 
   func startModel() { store.startModel() }
 

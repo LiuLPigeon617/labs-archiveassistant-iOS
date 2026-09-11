@@ -12,30 +12,33 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 
-// Swift-facing entry points, declared as top-level functions on purpose.
-//
-// A Kotlin `object` is exported to Swift as a class with a `.shared` accessor, whereas top-level
-// functions in SharedStateBridge.kt are exported as class methods on the `SharedStateBridgeKt`
-// facade. Swift calls these as `SharedStateBridgeKt.makeStateStore()`, which is only valid for the
-// latter form.
-
-private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
 /**
- * Called once from `AppDelegate.application(_:didFinishLaunchingWithOptions:)`.
+ * Swift-facing entry points.
  *
- * State observation starts here so the UIApplication run loop is already running. No DI container is
- * used (constructor defaults provide the seams), so this is currently just a defined init hook.
+ * Declared as an `object` rather than top-level functions on purpose. A Kotlin object is exported to
+ * Swift as a class with a `shared` singleton accessor, which is a stable calling convention; the
+ * file-facade name generated for top-level functions did not resolve from Swift.
  */
-fun doInitKoinIos() {
-  println("[SharedStateBridge] iOS shared module initialized")
-}
+object IosAppBridge {
+  private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-fun makeStateStore(): SharedStateStore = SharedStateStore()
+  /**
+   * Called once from `AppDelegate.application(_:didFinishLaunchingWithOptions:)`.
+   *
+   * State observation starts here rather than at first use, so the UIApplication run loop is already
+   * running. No DI container is used (constructor defaults provide the seams), so this is currently
+   * just a defined initialization hook.
+   */
+  fun doInit() {
+    println("[IosAppBridge] iOS shared module initialized")
+  }
 
-/** Bridges a Kotlin `StateFlow` into a plain callback that Swift republishes through Combine. */
-fun observeState(store: SharedStateStore, onState: (StateSnapshot) -> Unit) {
-  store.snapshots.onEach { onState(it) }.launchIn(bridgeScope)
+  fun makeStateStore(): SharedStateStore = SharedStateStore()
+
+  /** Bridges a Kotlin `StateFlow` into a callback that Swift republishes through Combine. */
+  fun observeState(store: SharedStateStore, onState: (StateSnapshot) -> Unit) {
+    store.snapshots.onEach { onState(it) }.launchIn(scope)
+  }
 }
 
 /**
@@ -43,6 +46,8 @@ fun observeState(store: SharedStateStore, onState: (StateSnapshot) -> Unit) {
  *
  * Only [String] and primitives cross the boundary: Kotlin enums become awkward Objective-C generics
  * in Swift, so they are flattened to their names here and re-parsed on the Swift side.
+ *
+ * Note for Swift callers: Kotlin `Boolean` surfaces as `KotlinBoolean`, so read `.boolValue`.
  */
 data class StateSnapshot(
   val engineType: String,
