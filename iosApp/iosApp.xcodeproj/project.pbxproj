@@ -150,7 +150,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n# Builds the Kotlin Multiplatform framework (SharedKit.xcframework) that this app links against.\n# Requires macOS with Xcode command line tools installed.\ncd \"$SRCROOT/../..\"\n./gradlew :shared:assembleSharedKitXCFramework\n";
+			shellScript = "set -e\n\n# Builds the Kotlin Multiplatform framework (SharedKit.xcframework) this app links against.\n# Requires macOS with Xcode command line tools installed.\ncd \"$SRCROOT/..\"\n\necho \"=== building SharedKit.xcframework ===\"\n./gradlew :shared:assembleSharedKitXCFramework\n\n# Copy to a stable path: Gradle writes to XCFrameworks/debug or /release (lowercase),\n# and FRAMEWORK_SEARCH_PATHS must not depend on that casing.\nSRC=$(find shared/build/XCFrameworks -maxdepth 2 -name \"SharedKit.xcframework\" -type d | head -n 1)\nif [ -z \"$SRC\" ]; then\n  echo \"error: SharedKit.xcframework not found under shared/build/XCFrameworks\"\n  exit 1\nfi\nDEST=\"$SRCROOT/../build/ios-frameworks\"\nmkdir -p \"$DEST\"\nrm -rf \"$DEST/SharedKit.xcframework\"\ncp -R \"$SRC\" \"$DEST/\"\necho \"=== framework ready at $DEST/SharedKit.xcframework ===\"";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -206,6 +206,15 @@
 		1A0000110000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../build/ios-frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					SharedKit,
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Info.plist;
@@ -226,6 +235,15 @@
 		1A0000110000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../build/ios-frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					SharedKit,
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = Info.plist;
