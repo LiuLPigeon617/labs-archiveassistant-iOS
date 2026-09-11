@@ -13,8 +13,7 @@ plugins {
 kotlin {
   // JVM target exists so the shared kernel can be compiled and unit-tested on
   // Windows/Linux CI. iOS frameworks can only be produced on macOS + Xcode.
-  jvm()
-
+  jvm("desktop")
   androidTarget { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) } }
 
   // iOS targets are declared only on macOS: Kotlin/Native can *configure* them
@@ -37,8 +36,11 @@ kotlin {
 
   sourceSets {
     commonMain.dependencies {
-      // compose-runtime supplies mutableStateOf / getValue / setValue, which the state store uses.
       implementation(compose.runtime)
+      implementation(compose.foundation)
+      implementation(compose.ui)
+      implementation(compose.material3)
+      implementation(compose.components.resources)
       implementation(libs.kotlinx.serialization.json)
       implementation(libs.ktor.client.core)
       implementation(libs.ktor.client.content.negotiation)
@@ -56,7 +58,12 @@ kotlin {
       implementation(libs.kotlinx.coroutines.test)
     }
 
-    jvmTest.dependencies {
+    // A named jvm target produces "desktopMain"/"desktopTest", but the Kotlin DSL needs an explicit
+    // accessor to reference them directly.
+    val desktopMain by getting
+    val desktopTest by getting
+
+    desktopTest.dependencies {
       implementation(kotlin("test-junit"))
       implementation(libs.junit)
     }
@@ -67,9 +74,9 @@ kotlin {
       implementation(libs.jsoup)
     }
 
-    // The jvm target compiles to bytecode, so it can use Jsoup directly too. Only the
+    // The desktop target compiles to bytecode, so it can use Jsoup directly too. Only the
     // Kotlin/Native iOS target needs the multiplatform port (Ksoup).
-    jvmMain.dependencies {
+    desktopMain.dependencies {
       implementation(libs.ktor.client.okhttp)
       implementation(libs.jsoup)
     }
