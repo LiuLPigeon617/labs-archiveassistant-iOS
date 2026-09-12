@@ -137,12 +137,100 @@ Two rules cost several CI cycles to establish; both are documented at the call s
 Byte payloads cross the boundary as Base64 strings rather than `ByteArray`, because Swift's
 `KotlinByteArray` interop requires per-element accessors.
 
+## Compose UI migration status
+
+### Done (compiles green)
+
+`./gradlew :shared:compileKotlinDesktop :shared:desktopTest` passes. 19 files now live in
+`shared/src/commonMain/.../ui/`:
+
+- `theme/`: Color, ImperialPalette, ImperialFonts
+- `components/`: ActionButton, ArchiveChip, ArchiveDialog, ArchiveNoticeBanner, PaneContainer,
+  PaneHeader, XuanPaperBackground
+- `layout/`: LayoutMode
+- `screens/`: ArchiveVisuals, MemorialCoverSequence, MemorialStackGeometry, PaneHeroHeader,
+  TagVisuals, TopicManagementDialogs
+- root: ArchivePainter, ArchiveFont (the two expect/actual seams)
+
+### Verification target
+
+The compile-verification target is `jvm("desktop")`, not plain `jvm()`. Compose UI artifacts do not
+resolve for a plain `jvm()` target, which previously meant every UI change needed a ~20 minute macOS
+CI round trip. `jvm("desktop")` compiles Compose on Windows in seconds.
+
+Note the Kotlin DSL requires explicit accessors for a named target's source sets:
+
+```kotlin
+val desktopMain by getting
+val desktopTest by getting
+```
+
+Source directories are `shared/src/desktopMain` and `shared/src/desktopTest`.
+
+### Deferred: four screens, and the strategy required
+
+Still in `:app`: `HomePane.kt` (1493 lines), `SettingsPane.kt` (775), `MemorialBriefingPane.kt`
+(805), `MemorialDemoOverlay.kt` (304).
+
+They were attempted and reverted, because they thread Android `R.drawable` **`Int` resource ids**
+through many private helper composables. Converting them incrementally leaves the module
+uncompilable and produces half-converted files.
+
+**Required strategy — do this as one atomic pass per file:**
+
+1. First convert **every** resource parameter from `Int` to `String` across all helper signatures
+   *and* their call sites in that file (`imageRes` -> `imageAsset`, `ornamentRes` -> `ornamentAsset`,
+   `backgroundRes` -> `backgroundAsset`, `MemorialCoverResources` -> `MemorialCoverAssets`, and plain
+   `List<Int>` cover lists -> `List<String>`).
+2. Replace `painterResource(id = X)` with `archivePainter(X)`, wrapping call sites that need a
+   non-null `Painter` in `archivePainterOrPlaceholder(X)`.
+3. Replace `ImperialTitleFont` / `ImperialDisplayFont` / `ImperialStampTitleFont` with
+   `LocalImperialFonts.current.title` / `.display`.
+4. Only then copy the file into `shared/commonMain`.
+
+Do not compile between steps 1–4 for a given file; the intermediate states are not valid.
+
+### Platform seams introduced
+
+| Seam | Android | iOS / desktop |
+|---|---|---|
+| `archivePainter(name): Painter?` | `res/drawable` via `getIdentifier` | null for now; callers degrade to a placeholder. Needs art in `commonMain/composeResources` |
+| `archiveFontFamily(name): FontFamily?` | `res/font` via `getIdentifier` | null; theme falls back to `FontFamily.Serif` |
+
+Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
+private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
+
+Material Icons are deliberately **not** a dependency of `:shared`; the iOS chrome uses SF Symbols.
+Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locally (see
+`CloseSearchGlyph` in HomePane).
+
 ## Remaining work
 
-1. Migrate the Compose UI layer into `:shared` and replace the placeholder hosted by
-   `ComposeHostingViewController`.
-2. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
-3. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
-4. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
-5. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+1. Migrate the four deferred screens using the atomic-pass strategy above.
+2. Migrate the Canvas-heavy memorial views (10 files, ~5651 lines, incl. `MemorialFoldView.kt` at
+   3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
+   fold/swipe responsiveness as a known problem.
+3. Move mock artwork into `commonMain/composeResources` so `archivePainter` returns real painters on
+   iOS, and the same for the three calligraphic TTFs.
+4. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
+   point, and wire it to `ArchiveAssistantStateStore`.
+5. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
+6. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
+7. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
+8. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+
+## Tooling pitfalls encountered (avoid repeating)
+
+- **PowerShell scripts containing non-ASCII must be saved with a UTF-8 BOM.** PowerShell reads a
+  BOM-less `.ps1` using the platform code page, which truncates CJK string literals and produces
+  syntax errors. Prefer ASCII-only scripts.
+- **Copying source files with PowerShell round-trips through the code page and corrupts CJK.** Use
+  explicit UTF-8 buffers (`[System.IO.File]::ReadAllText` / `WriteAllText` with
+  `UTF8Encoding($false)`, or Node's `fs` with `'utf8'`). This corrupted `Info.plist` and several
+  Kotlin files during the migration.
+- **Deleting the current working directory fails with "in use".** Run the delete from a different
+  `workdir`. The same applies to renaming it.
+- **The session workspace is the session's `cwd`.** It is fixed at session start; there is no `dsh`
+  CLI subcommand to change it. DSH writes `.dsh-edit-review*.json` into that path, so a stale
+  workspace path keeps being recreated. To move a workspace, start a session from the new directory.
 
