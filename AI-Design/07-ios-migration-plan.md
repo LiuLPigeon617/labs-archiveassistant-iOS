@@ -185,12 +185,12 @@ Source directories are `shared/src/desktopMain` and `shared/src/desktopTest`.
 
 ### Remaining portable screens, and the strategy required
 
-Still in `:app`: `HomePane.kt` (1493 lines), `MemorialBriefingPane.kt` (805), `DetailPane.kt`
-(1220).
+Still in `:app`: `HomePane.kt` (1493 lines) and `MemorialBriefingPane.kt` (805).
 
 They were attempted and reverted, because they thread Android `R.drawable` **`Int` resource ids**
 through many private helper composables. Converting them incrementally leaves the module
-uncompilable and produces half-converted files.
+uncompilable and produces half-converted files. `MemorialBriefingPane` is the smaller of the two and
+the better next target: 10 `painterResource` sites, one `List<Int>` cover list, two legacy fonts.
 
 **Required strategy — do this as one atomic pass per file:**
 
@@ -216,15 +216,26 @@ Three more conversions the atomic pass must also cover, each learned while migra
 - **`rememberCoroutineScope()`.** Prefer a keyed `LaunchedEffect` over the state it acts on, which
   also cancels a stale in-flight request and keeps the pane free of a platform scope.
 
-### Not portable by conversion: `MemorialDemoOverlay.kt`
+### Not portable by conversion: `MemorialDemoOverlay.kt` and `DetailPane.kt`
 
-`MemorialDemoOverlay.kt` (304 lines) is listed in earlier revisions as a fifth deferred screen to be
-converted with the atomic pass. It cannot be: both of its composables are thin wrappers whose entire
-payload is `AndroidView { MemorialFoldView(context) }`, plus `androidx.activity.compose.BackHandler`
-and `MemorialImmersiveSystemUi`. Nothing in the file draws Compose UI of its own.
+Earlier revisions listed both of these as screens to be converted with the atomic pass. Neither can
+be.
 
-Its fate is therefore the memorial reader's (see remaining work #2), not the atomic pass. Treating it
-as a mechanical port would produce a file that compiles nowhere.
+`MemorialDemoOverlay.kt` (304 lines): both of its composables are thin wrappers whose entire payload
+is `AndroidView { MemorialFoldView(context) }`, plus `androidx.activity.compose.BackHandler` and
+`MemorialImmersiveSystemUi`. Nothing in the file draws Compose UI of its own, so its fate is the
+memorial reader's (see remaining work #3). A mechanical port would produce a file that compiles
+nowhere.
+
+`DetailPane.kt` (1220 lines): it is not a resource-id problem, it is an image-and-file platform
+problem. It pulls in `LocalContext`, `BitmapFactory`, `Uri`, `rememberLauncherForActivityResult`,
+`copyUriToFile`, and a `Context`-based `writeMarkdownPrefillFile` — four separate Android seams. It
+needs real platform abstractions (image decoding, a file/document picker, content-source
+materialization) before any conversion, so it is a work item of its own rather than a fifth atomic
+pass.
+
+Net: **two** screens remain convertible, not four. That is a scope reduction of ~1500 lines against
+what this document previously implied.
 
 ### `SettingsPane` migrated (compiles green)
 
@@ -265,20 +276,23 @@ Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locall
 
 ## Remaining work
 
-1. Migrate the three remaining portable screens (`HomePane`, `MemorialBriefingPane`, `DetailPane`)
-   using the atomic-pass strategy above. `DetailPane.kt` was missing from this list until now.
-2. Migrate the Canvas-heavy memorial views (10 files, ~5651 lines, incl. `MemorialFoldView.kt` at
+1. Migrate the two remaining convertible screens (`HomePane`, `MemorialBriefingPane`) using the
+   atomic-pass strategy above.
+2. Re-platform `DetailPane.kt`: image decoding, a document picker, content-source materialization and
+   markdown-prefill writing are four Android seams that need shared abstractions first. The screen
+   cannot be converted before they exist.
+3. Migrate the Canvas-heavy memorial views (10 files, ~5651 lines, incl. `MemorialFoldView.kt` at
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
-   fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here, not to the
-   screen conversions: it is a pure `AndroidView` wrapper around `MemorialFoldView`.
-3. Move mock artwork into `commonMain/composeResources` so `archivePainter` returns real painters on
+   fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a
+   pure `AndroidView` wrapper around `MemorialFoldView`.
+4. Move mock artwork into `commonMain/composeResources` so `archivePainter` returns real painters on
    iOS, and the same for the three calligraphic TTFs.
-4. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
+5. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
    point, and wire it to `ArchiveAssistantStateStore`.
-5. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
-6. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
-7. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
-8. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+6. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
+7. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
+8. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
+9. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
 
 ### Known gaps that are not yet a numbered item
 
