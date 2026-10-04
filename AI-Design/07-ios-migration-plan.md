@@ -183,6 +183,36 @@ val desktopTest by getting
 
 Source directories are `shared/src/desktopMain` and `shared/src/desktopTest`.
 
+**What this target cannot verify — read before trusting a green desktop build.** The desktop target
+shares `commonMain` sources with iOS, but it does **not** share the same API surface or the same
+compiler. Two consequences:
+
+1. **iOS targets are not even configured off macOS.** `shared/build.gradle.kts:21` is
+   `if (isMacOs()) { … }` around `listOf(iosArm64(), iosSimulatorArm64())`, with `isMacOs()` at
+   line 103. On Windows `:shared:tasks --all` lists no `compileKotlinIos*` task at all, so there is
+   no local command that compiles this code the way iOS will.
+2. **A JVM-only dependency can resolve on desktop and fail on iOS.** Kotlin/Native has a different
+   artifact for every library, and packages that exist in the JVM variant may be absent from the
+   native one.
+
+This produced a real failure, caught only by CI:
+
+```
+e: shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/components/XuanPaperBackground.kt:14:28 Unresolved reference 'res'.
+> Task :shared:compileKotlinIosArm64 FAILED
+```
+
+Line 14 was `import androidx.compose.ui.res.painterResource`, dead code copied from the Android
+source (the file goes through `archivePainter`). It resolved on desktop because
+`androidx.compose.ui.res` ships in the JVM artifact; package `androidx.compose.ui.res` does not
+exist for Kotlin/Native, so the iOS compile could not resolve the import. Fixed in `cb8e6a8`.
+
+Practical rule: **when a `commonMain` file is ported from Android, strip the `androidx.compose.ui.res`
+import block even if the build is green**, and treat the macOS CI run as the only authoritative
+iOS compile. Grepping `androidx\.compose\.ui\.res|LocalContext|^import android\.` under
+`shared/src/commonMain` is a cheap pre-flight check; the only remaining hits live in `androidMain`
+(`platform/Platform.kt`, `data/Support.kt`), which iOS never compiles.
+
 ### Remaining portable screens, and the strategy required
 
 Still in `:app`: `HomePane.kt` (1493 lines) and `MemorialBriefingPane.kt` (805).
