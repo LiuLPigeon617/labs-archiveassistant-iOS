@@ -313,6 +313,24 @@ jobs:
           fi
           echo "=== built: $APP ==="
 
+          # Compose Multiplatform aborts at process start unless this key is present, and the failure
+          # surfaces only as a SIGABRT in a crash report - the Kotlin message goes to the app console.
+          # Assert it on the built product here so a deletion fails the build with an obvious reason.
+          echo "=== Compose plist precondition ==="
+          PLIST="$APP/Info.plist"
+          if [ ! -f "$PLIST" ]; then
+            echo "::error::no Info.plist inside $APP"
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c "Print :CADisableMinimumFrameDurationOnPhone" "$PLIST" 2>/dev/null | grep -qi true; then
+            echo "CADisableMinimumFrameDurationOnPhone = true (Compose will start)"
+          else
+            echo "::error::CADisableMinimumFrameDurationOnPhone is missing or not true in the built Info.plist."
+            echo "::error::Compose Multiplatform aborts on launch without it - see PlistSanityCheck.uikit.kt."
+            /usr/libexec/PlistBuddy -c "Print" "$PLIST" || true
+            exit 1
+          fi
+
           echo "=== signature ==="
           codesign -dv --verbose=2 "$APP" 2>&1 || true
 
