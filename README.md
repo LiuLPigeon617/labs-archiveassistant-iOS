@@ -26,17 +26,16 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 已入包资源：12 个图形资源（约 1.5 MB）与 2 个书法字体（约 12.9 MB），打包总量约 14.4 MB。
 - 目标平台：`desktop`（本机可验证的 JVM 目标）、`androidTarget`、`iosArm64`、`iosSimulatorArm64`；iOS 产物为名为 `SharedKit` 的 XCFramework。
 - iOS 宿主工程：`iosApp/` 提供 SwiftUI 外壳、原生设置页、状态桥接与平台引导代码；持续集成在 macOS 上构建未签名 IPA。
-- Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效），并从 `ArchiveAssistantStateStore` 读取状态分发到已迁移的设置页；iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂，经 `ArchiveComposeHostingViewController` 承载。
+- Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效）并从 `ArchiveAssistantStateStore` 读取状态分发到已迁移的设置页；iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂，经 `ArchiveComposeHostingViewController` 承载。
+- 主题已迁入共享内核：`ArchiveAssistantTheme` 现位于 `shared/src/commonMain/.../ui/theme/Theme.kt`，把 `MaterialTheme.colorScheme` 映射到皇家配色，并移植了完整 13 级字阶；浅色与深色两套配色都保留，`SettingsPane` 等界面不再回落到默认紫色强调色。
 
 ## 尚未完成与已知问题
 
-- 共享内核缺少 Material 主题：`:shared` 内没有 `MaterialTheme` 包装，`ArchiveAssistantTheme` 仍在 `:app` 中，因此 `SettingsPane` 等界面读取到的 `MaterialTheme.colorScheme.*` 会回落到 Material 3 默认配色（默认紫色强调色），而不是皇家配色。要等主题也迁入 `commonMain` 才能算视觉迁移完成。
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是首页与详情页都还没迁入共享内核，此时挂载只能把设置页放进「条目详情」的位置。
 - 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与首页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。
 - iOS 无法在本机构建验证：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，因此共享内核的 iOS 产物没有本机验证记录；iOS 编译与 Swift 侧代码目前由持续集成验证（最近一次全绿）。
 - JVM 目标命名容易踩坑：本分支的 JVM 目标名为 `desktop`（`shared/build.gradle.kts` 中为 `jvm("desktop")`），对应的任务是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`；引用错的名称会让构建在任务解析阶段直接失败。
-- 颜色主题只实现了一部分：书法字体已由根组件安装生效，但配色仍需随主题迁移补齐；当前直接引用字面量的皇家配色（如 `ImperialIvory`、`ImperialCinnabar`）才会生效。
 - 本地模型文件选择尚未接通：设置页的「选择模型文件」按钮已绘出，但在 Compose 根组件中被刻意置空，因为还缺少原生文件选择器；点击不会有任何反应。
 - AI 三省六部推荐尚未实现：当前项目有 AI 归纳与分类提示词基础，但还没有完成面向“三省六部”体系的自动推荐、排序或决策流。不要把现有智能归纳视为完整推荐系统。
 - 页面滑动响应偏慢：部分页面，尤其是复杂折页阅读/审阅界面，存在滑动、翻页或手势响应不够跟手的问题，还需要继续做渲染、手势处理和重组性能优化。
@@ -124,9 +123,9 @@ iOS（仅构建 iOS 产物时需要）：
 
 iOS 产物由 `.github/workflows/ios-build.yml` 在 macOS runner 上构建，产出未签名的 IPA 作为构建产物；也可以在装有 Xcode 的 macOS 上打开 `iosApp/iosApp.xcodeproj` 构建。
 
-最近一次构建（提交 `135d2f2`，运行 37199938026）全绿：工作流全部步骤通过，产出的未签名 IPA 约 13.5 MB，共享内核的单测报告与 `xcodebuild` 日志一并作为构建产物上传。
+最近一次验证过的构建（提交 `135d2f2`，运行 37199938026）全绿：工作流全部步骤通过，产出的未签名 IPA 为 14,170,223 字节，共享内核的单测报告与 `xcodebuild` 日志一并作为构建产物上传。主题移植提交 `f402b86` 只改 `commonMain`（新增 `Theme.kt`、调整根组件），本地以 `desktop` 目标验证通过。
 
-体积变化值得注意：前一次全绿构建（`10a44a8`）的 IPA 约 5.4 MB，接入 Compose 根组件后升到约 13.5 MB，差额基本就是两个书法字体。字体此前虽已入包，但没有任何代码引用，因此在 iOS 产物里被当作未使用资源而未被打进 App；根组件开始调用 `archiveFontFamily` 后它们才真正随包发布。TTF 本身已内部压缩，重新编码图片无法回收这部分体积，唯一有效的杠杆是按需子集化字体。
+体积变化值得注意：前一次全绿构建（`10a44a8`）的 IPA 为 5,650,070 字节，接入 Compose 根组件后升到 14,170,223 字节，差额基本就是两个书法字体。字体此前虽已入包，但没有任何代码引用，因此在 iOS 产物里被当作未使用资源而未被打进 App；根组件开始调用 `archiveFontFamily` 后它们才真正随包发布。TTF 本身已内部压缩，重新编码图片无法回收这部分体积，唯一有效的杠杆是按需子集化字体。
 
 ## 项目结构
 
@@ -159,12 +158,11 @@ docs/                迁移相关的生成文档
 
 当前优先级建议如下：
 
-1. 把主题迁入共享内核：将 `ArchiveAssistantTheme` 的配色映射到皇家配色字面量并搬进 `commonMain`，让 `MaterialTheme.colorScheme.*` 不再回落到默认紫色。这是任何界面被称为「已完成视觉迁移」的前提。
-2. 继续迁移剩余界面：按依赖顺序处理详情页（先补平台抽象）与首页，最后处理奏折阅读/审阅界面（含性能预算）；两栏随之从占位视图切换到真实共享界面，工具栏的预览入口届时可以删除。
-3. 完成 AI 三省六部推荐：明确输入、推荐目标、解释信息、失败态和人工确认流程。
-4. 优化滑动与翻页性能：重点检查复杂自绘视图、动画、触摸事件处理和 Compose 重组边界。
-5. 稳定导入与归纳流程：覆盖网页、Markdown、PDF、本地文件和剪贴板输入的异常处理。
-6. 补齐发布前验证：增加真机性能测试、端到端用例、权限说明和发布配置。
+1. 继续迁移剩余界面：按依赖顺序处理详情页（先补平台抽象）与首页，最后处理奏折阅读/审阅界面（含性能预算）；两栏随之从占位视图切换到真实共享界面，工具栏的预览入口届时可以删除。
+2. 完成 AI 三省六部推荐：明确输入、推荐目标、解释信息、失败态和人工确认流程。
+3. 优化滑动与翻页性能：重点检查复杂自绘视图、动画、触摸事件处理和 Compose 重组边界。
+4. 稳定导入与归纳流程：覆盖网页、Markdown、PDF、本地文件和剪贴板输入的异常处理。
+5. 补齐发布前验证：增加真机性能测试、端到端用例、权限说明和发布配置。
 
 ## 许可
 

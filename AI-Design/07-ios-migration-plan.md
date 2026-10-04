@@ -366,8 +366,8 @@ pane rendered in the platform serif fallback while the fonts sat unused.
 
 **Resolved** by the Compose root added in `be21549`: `ArchiveAssistantRoot` now installs
 `ProvideImperialFonts` with both faces, so this is the first composition root that gives them a
-chance to render. What it does *not* fix is the Material theme gap (below), so settings chrome is
-still baseline-coloured.
+chance to render. The Material theme gap that the root initially left open was closed right after it,
+in `f402b86` (see below), so settings chrome is now imperial-coloured rather than baseline-purple.
 
 Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
 private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
@@ -381,26 +381,50 @@ Material Icons are deliberately **not** a dependency of `:shared`; the iOS chrom
 Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locally (see
 `CloseSearchGlyph` in HomePane).
 
-### `:shared` has no MaterialTheme, so the palette does not apply
+### The Material theme gap — found, and closed in `f402b86`
 
-A gap surfaced while building the root, and it is not fixable by the root itself. Grepping the module
-for `MaterialTheme(` / `colorScheme =` / `lightColorScheme` returns **nothing**: the only
-`ArchiveAssistantTheme` lives in `:app` at `app/src/main/java/com/lyihub/archiveassistant/ui/theme/Theme.kt:62`.
-Consequently every `MaterialTheme.colorScheme.*` read in shared UI resolves to the Material 3
-**baseline** scheme:
+A gap surfaced while building the root: grepping the module for `MaterialTheme(` / `colorScheme =` /
+`lightColorScheme` returned **nothing**. The only `ArchiveAssistantTheme` lived in `:app` at
+`app/src/main/java/com/lyihub/archiveassistant/ui/theme/Theme.kt:62`, so every
+`MaterialTheme.colorScheme.*` read in shared UI resolved to the Material 3 **baseline** scheme:
 
 | Call site | Reads |
 |---|---|
 | `shared/.../ui/screens/SettingsPane.kt:349,364,403,534,545,587,588` | `.primary`, `.error`, `.onSurfaceVariant` |
 | `shared/.../ui/components/PaneContainer.kt:33` | `.outlineVariant` |
 
-So `SettingsPane` currently renders with the default purple accent, not `ImperialCinnabar`. The
-imperial colours that *do* apply are the ones referenced directly as literals
+`SettingsPane` therefore rendered with the default purple accent, not `ImperialCinnabar`, while the
+imperial colours that *did* apply were only the ones referenced directly as literals
 (`shared/.../ui/theme/ImperialPalette.kt`: `ImperialParchment` 0xFFE6D7BE, `ImperialBronze`
 0xFFD1A36B, `ImperialLightGold` 0xFFEDD8AA, `ImperialIvory` 0xFFFCFBF6, `ImperialUmber` 0xFF8B654A,
-`ImperialCinnabar` 0xFFE65D3F). Porting `ArchiveAssistantTheme` into `commonMain` — a
-`lightColorScheme` mapped onto those literals, no dark variant yet — is its own change and is the
-next thing to do before any pane can be called visually migrated.
+`ImperialCinnabar` 0xFFE65D3F).
+
+The fix is `shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/theme/Theme.kt`, ported from
+the `:app` version. What the port had to decide, and why:
+
+- **Both schemes, not just light.** The dark tokens (`DarkTerracotta` and the rest in
+  `shared/.../ui/theme/Color.kt`) were already sitting next to the light ones; porting only light
+  would have silently changed dark-mode appearance relative to the Android app. `darkTheme` defaults
+  to `isSystemInDarkTheme()`, as on Android.
+- **The whole type scale, not only the levels in use.** `archiveTypography()` defines all 13 levels.
+  A partial `Typography` would leave the untouched levels on the platform default face, which reads
+  as an oversight rather than a decision. The levels the shared UI reaches for today are in
+  `SettingsPane.kt` (17 sites), `PaneHeader.kt:47,56`, `PaneHeroHeader.kt:50`,
+  `TopicManagementDialogs.kt:104,110,144`, `ArchiveDialog.kt:67,104`, `ArchiveChip.kt:33`,
+  `ActionButton.kt:42,71`, `ArchiveNoticeBanner.kt:54`.
+- **Two Android behaviours deliberately not ported**, with reasons recorded in the KDoc so nobody has
+  to guess whether they were forgotten: `dynamicColor` (Material You has no cross-platform equivalent
+  and would defeat the imperial palette) and edge-to-edge system bar styling (a window concern, not a
+  theme concern; it stays with the Android host's `enableEdgeToEdge`).
+- **`archiveTypography()` is built inline rather than remembered**, because resolving a face goes
+  through `archiveFontFamily`, which is `@Composable` (see the API constraint noted above).
+- `ArchiveAssistantRoot` keeps `ProvideImperialFonts` *and* adds `ArchiveAssistantTheme`, because
+  call sites reading `LocalImperialFonts` directly (e.g. `PaneHeroHeader.kt:64`) would otherwise
+  still fall back to serif. `NotYetMigratedPane` now reads `colorScheme.background` instead of the
+  `ImperialIvory` literal so it stays legible in dark mode.
+
+Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incremental and
+`--rerun-tasks`, no errors or warnings.
 
 ## Remaining work
 
@@ -419,18 +443,19 @@ next thing to do before any pane can be called visually migrated.
    migrated yet. Read the size finding below before copying any of it.
 5. ~~Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
    point …~~ **Done in `be21549`** — see "The Compose root exists now" below.
-6. Port `ArchiveAssistantTheme` into `commonMain` so `MaterialTheme.colorScheme` stops resolving to
-   the Material 3 baseline. Required before any pane looks migrated.
+6. ~~Port `ArchiveAssistantTheme` into `commonMain` so `MaterialTheme.colorScheme` stops resolving to
+   the Material 3 baseline.~~ **Done in `f402b86`** (both schemes and the full type scale).
 7. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
 8. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
-9. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+10. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
 
 ### Artwork size: the remainder is not a free move
 
-The 49 asset names referenced by Kotlin code total **44.9 MB** in `app/src/main/res`, against an
-unsigned IPA that currently ships at ~5.2 MB. Copying them verbatim would add roughly 45 MB to the
-bundle, so this is a bundling decision, not a mechanical copy.
+The 49 asset names referenced by Kotlin code total **44.9 MB** in `app/src/main/res`. For scale: the
+unsigned IPA measured 5,650,070 B after the first green CI run, and 14,170,223 B once the root began
+actually resolving `Res.font.*` and the two TTFs started shipping. Copying the remaining artwork
+verbatim would add tens of MB on top — this is a bundling decision, not a mechanical copy.
 
 Where the weight is, and what it implies:
 
