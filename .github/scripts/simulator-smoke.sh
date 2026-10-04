@@ -55,14 +55,25 @@ echo "app bundle: $APP_PATH"
 # ---------------------------------------------------------------------------------------------------
 
 log "available simulators"
-xcrun simctl list devices available | sed -n '1,40p'
+# Printed in full on purpose: this listing is the first thing to look at when the device parse below
+# or the runtime choice looks wrong, and a truncated head is what makes that debugging guesswork.
+xcrun simctl list devices available
 
 # Emit "Name|UDID" pairs, preferring a recent full-size iPhone from the newest runtime.
+#
+# Two things about this listing cost a CI round trip: simctl pads every device line with a TRAILING
+# SPACE, so an anchored `)$` never matched and the parse silently produced nothing; and the runtimes
+# are grouped oldest-first, so taking the last match lands on the newest runtime.
 DEVICES="$(xcrun simctl list devices available \
-  | sed -nE 's/^ *(iPhone [^(]*) \(([0-9A-Fa-f-]+)\) \(.*\)$/\1|\2/p')"
-[ -n "$DEVICES" ] || die "no available iPhone simulator found."
+  | sed -nE 's/^[[:space:]]*(iPhone [^(]*) \(([0-9A-Fa-f-]+)\) \(.*\)[[:space:]]*$/\1|\2/p')"
+if [ -z "$DEVICES" ]; then
+  echo "::error::could not parse any iPhone simulator out of the simctl listing above."
+  exit 1
+fi
 
-PICK="$(printf '%s\n' "$DEVICES" | grep -E '^iPhone 1[5-9]( Pro)?\|' | tail -n 1 || true)"
+# `iPhone SE` is excluded on purpose: it is the one current phone whose width would misrepresent the
+# layout, and the 16-series-and-later list is where the full-size devices live.
+PICK="$(printf '%s\n' "$DEVICES" | grep -E '^iPhone (1[5-9]|Air)' | tail -n 1 || true)"
 [ -n "$PICK" ] || PICK="$(printf '%s\n' "$DEVICES" | tail -n 1)"
 
 DEVICE_NAME="${PICK%%|*}"
@@ -108,9 +119,11 @@ stop_app() {
 
   # `simctl launch --console` exits once the app dies, but do not stake the whole run on that: give it
   # a few seconds, then kill the stream so a stuck process cannot hang the job.
-  for _ in $(seq 1 10); do
+  local waited=0
+  while [ "$waited" -lt 10 ]; do
     kill -0 "$CONSOLE_PID" 2>/dev/null || return 0
     sleep 1
+    waited=$((waited + 1))
   done
   kill "$CONSOLE_PID" 2>/dev/null || true
   wait "$CONSOLE_PID" 2>/dev/null || true
@@ -124,8 +137,9 @@ stop_app() {
 assert_running() {
   local what="$1"
   local console_log="$2"
+  local waited=0
 
-  for _ in $(seq 1 25); do
+  while [ "$waited" -lt 25 ]; do
     if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
       echo "$what: running (launchd job present)."
       return 0
@@ -135,6 +149,7 @@ assert_running() {
       return 0
     fi
     sleep 1
+    waited=$((waited + 1))
   done
 
   echo "=== console output from the failed launch ==="
