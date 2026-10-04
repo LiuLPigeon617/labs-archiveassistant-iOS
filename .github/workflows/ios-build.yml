@@ -179,6 +179,29 @@ jobs:
           ls -lh "$IPA"
           unzip -l "$IPA" | head -n 12
 
+          # This is the artifact people actually install, so verify the shipped app carries what
+          # Compose needs at launch rather than trusting the build phases that were supposed to add it.
+          echo "=== shipped-app preconditions ==="
+          SHIPPED=$(find build/Payload/聚合拾遗.app -maxdepth 0 -type d || true)
+          if [ -z "$SHIPPED" ]; then
+            echo "::error::Payload/聚合拾遗.app missing before packaging"
+            exit 1
+          fi
+          FONTS=$(find "$SHIPPED/compose-resources" -type f -name '*.ttf' 2>/dev/null | wc -l | tr -d ' ')
+          echo "compose-resources font files: $FONTS"
+          if [ "$FONTS" -lt 1 ]; then
+            echo "::error::the packaged app has no compose-resources fonts."
+            echo "::error::Compose aborts at launch with MissingResourceException, so this IPA would crash"
+            echo "::error::on any device. Check that :shared:syncComposeResourcesForIos ran during archiving."
+            exit 1
+          fi
+          if /usr/libexec/PlistBuddy -c "Print :CADisableMinimumFrameDurationOnPhone" "$SHIPPED/Info.plist" 2>/dev/null | grep -qi true; then
+            echo "CADisableMinimumFrameDurationOnPhone = true"
+          else
+            echo "::error::the packaged app's Info.plist lacks CADisableMinimumFrameDurationOnPhone."
+            exit 1
+          fi
+
           echo "ipa_path=$IPA" >> "$GITHUB_ENV"
 
       - name: Summarize build
@@ -313,9 +336,9 @@ jobs:
           fi
           echo "=== built: $APP ==="
 
-          # Compose Multiplatform aborts at process start unless this key is present, and the failure
-          # surfaces only as a SIGABRT in a crash report - the Kotlin message goes to the app console.
-          # Assert it on the built product here so a deletion fails the build with an obvious reason.
+          # Compose Multiplatform aborts at process start unless two things hold: the plist key below,
+          # and a populated compose-resources directory in the bundle. Both were caught by the smoke
+          # test rather than by the build, so both are asserted here.
           echo "=== Compose plist precondition ==="
           PLIST="$APP/Info.plist"
           if [ ! -f "$PLIST" ]; then
@@ -328,6 +351,19 @@ jobs:
             echo "::error::CADisableMinimumFrameDurationOnPhone is missing or not true in the built Info.plist."
             echo "::error::Compose Multiplatform aborts on launch without it - see PlistSanityCheck.uikit.kt."
             /usr/libexec/PlistBuddy -c "Print" "$PLIST" || true
+            exit 1
+          fi
+
+          echo "=== Compose resources precondition ==="
+          if [ -d "$APP/compose-resources" ] && [ -n "$(find "$APP/compose-resources" -type f -name '*.ttf' 2>/dev/null | head -n 1)" ]; then
+            echo "compose-resources present with fonts:"
+            find "$APP/compose-resources" -type f | head -n 10
+          else
+            echo "::error::the built app has no compose-resources directory (or no fonts in it)."
+            echo "::error::Compose serves archiveFontFamily from there and aborts with MissingResourceException."
+            echo "::error::The sync runs as the 'Build SharedKit.xcframework' build phase; check that"
+            echo "::error:::shared:syncComposeResourcesForIos ran for this configuration."
+            find "$APP" -maxdepth 1 || true
             exit 1
           fi
 
