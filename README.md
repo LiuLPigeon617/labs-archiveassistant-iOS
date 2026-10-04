@@ -34,7 +34,7 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是首页与详情页都还没迁入共享内核，此时挂载只能把设置页放进「条目详情」的位置。
 - 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与首页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。
-- iOS 无法在本机构建验证：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，因此共享内核的 iOS 产物目前没有本机验证记录；Swift 侧代码仅由持续集成验证。
+- iOS 无法在本机构建验证：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，因此共享内核的 iOS 产物没有本机验证记录；iOS 编译与 Swift 侧代码目前由持续集成验证（最近一次全绿）。
 - JVM 目标命名容易踩坑：本分支的 JVM 目标名为 `desktop`（`shared/build.gradle.kts` 中为 `jvm("desktop")`），对应的任务是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`；引用错的名称会让构建在任务解析阶段直接失败。
 - 颜色主题只实现了一部分：书法字体已由根组件安装生效，但配色仍需随主题迁移补齐；当前直接引用字面量的皇家配色（如 `ImperialIvory`、`ImperialCinnabar`）才会生效。
 - 本地模型文件选择尚未接通：设置页的「选择模型文件」按钮已绘出，但在 Compose 根组件中被刻意置空，因为还缺少原生文件选择器；点击不会有任何反应。
@@ -123,6 +123,10 @@ iOS（仅构建 iOS 产物时需要）：
 ### iOS
 
 iOS 产物由 `.github/workflows/ios-build.yml` 在 macOS runner 上构建，产出未签名的 IPA 作为构建产物；也可以在装有 Xcode 的 macOS 上打开 `iosApp/iosApp.xcodeproj` 构建。
+
+最近一次构建（提交 `135d2f2`，运行 37199938026）全绿：工作流全部步骤通过，产出的未签名 IPA 约 13.5 MB，共享内核的单测报告与 `xcodebuild` 日志一并作为构建产物上传。
+
+体积变化值得注意：前一次全绿构建（`10a44a8`）的 IPA 约 5.4 MB，接入 Compose 根组件后升到约 13.5 MB，差额基本就是两个书法字体。字体此前虽已入包，但没有任何代码引用，因此在 iOS 产物里被当作未使用资源而未被打进 App；根组件开始调用 `archiveFontFamily` 后它们才真正随包发布。TTF 本身已内部压缩，重新编码图片无法回收这部分体积，唯一有效的杠杆是按需子集化字体。
 
 ## 项目结构
 

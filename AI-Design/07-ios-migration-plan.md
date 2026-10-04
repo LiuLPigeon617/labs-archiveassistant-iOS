@@ -137,8 +137,34 @@ in a dedicated step; the in-Xcode build phase remains for developers building fr
 documents that a first build either needs the Gradle task run once or stages the framework for the
 next build.
 
-Status: the pipeline is green. It produces `JuHeShiYi-unsigned-ipa-Release` (~5.2 MB), containing
+Status: the pipeline is green, and it has a real green run behind it — **run 37199938026 on
+`135d2f2`**, job "Build unsigned IPA", conclusion `success`, all 15 steps plus the 4 post steps
+green (11 minutes; step 8, building `SharedKit.xcframework`, is the slow one). That run is also the
+only iOS verification the Compose root has: it compiles `iosArm64` and archives the app, so it covers
+both `ArchiveRootViewController.kt` and the Swift changes. Before `10a44a8` the workflow had **never**
+passed.
+
+Artifacts from that run: `JuHeShiYi-unsigned-ipa-Release` **14,170,223 B (~13.5 MB)**,
+`xcodebuild-log` 13,547 B, `shared-test-results` 6,402 B. The IPA contains
 `Payload/聚合拾遗.app/` with the executable, `Assets.car`, app icons and `Info.plist`.
+
+The IPA size is the number to watch now that the assets are bundled, and the jump across these two
+green runs is worth reading correctly:
+
+| Run | Commit | IPA |
+|---|---|---|
+| 37195349460 | `10a44a8` | 5,650,070 B (~5.4 MB) |
+| 37199938026 | `135d2f2` | 14,170,223 B (~13.5 MB) |
+
+The delta **is** the fonts: +8.5 MB. They were already in `composeResources/font` at `10a44a8`, but
+nothing referenced `Res.font.*` yet, so the resource pipeline had no reason to put the TTFs in the
+app bundle. Adding the Compose root — which calls `archiveFontFamily` — made them reachable and they
+started shipping. So this is not a regression from the root; it is what bundling two full CJK faces
+costs, and it was always going to arrive with the first caller.
+
+Unlike the JPEGs, the TTFs are already internally compressed, so zip gains almost nothing on them:
+re-encoding art will not recover this. If bundle size becomes a release concern, subsetting the two
+faces is the lever (see the font section).
 
 ### Kotlin/Swift interop notes
 
