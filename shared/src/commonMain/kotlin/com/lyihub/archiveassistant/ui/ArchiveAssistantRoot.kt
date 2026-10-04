@@ -15,8 +15,8 @@ import androidx.compose.ui.unit.dp
 import com.lyihub.archiveassistant.domain.AppPane
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
 import com.lyihub.archiveassistant.ui.screens.SettingsPane
+import com.lyihub.archiveassistant.ui.theme.ArchiveAssistantTheme
 import com.lyihub.archiveassistant.ui.theme.ImperialFonts
-import com.lyihub.archiveassistant.ui.theme.ImperialIvory
 import com.lyihub.archiveassistant.ui.theme.ProvideImperialFonts
 
 /**
@@ -43,43 +43,45 @@ import com.lyihub.archiveassistant.ui.theme.ProvideImperialFonts
  *
  * ### Known gap: no Material theme
  *
- * This module has no `MaterialTheme` wrapper, and this root does not add one. `SettingsPane` reads
- * `MaterialTheme.colorScheme.primary`, `.error` and `.onSurfaceVariant`, and `PaneDivider` reads
- * `.outlineVariant`, so those still resolve to the Material 3 **baseline** scheme rather than to the
- * imperial palette in [com.lyihub.archiveassistant.ui.theme.ImperialPalette]. Adding that theme is
- * deliberately its own change; see `AI-Design/07-ios-migration-plan.md`.
+ * When this root was first written, the module had no `MaterialTheme` wrapper, so `SettingsPane` read
+ * `MaterialTheme.colorScheme.primary` and friends against the Material 3 **baseline** scheme. That is
+ * no longer the case: this root now installs [ArchiveAssistantTheme], which supplies both the imperial
+ * colour scheme and the calligraphic type scale. `ProvideImperialFonts` is still installed as well,
+ * because call sites that read `LocalImperialFonts` directly (e.g. `PaneHeroHeader`) would otherwise
+ * fall back to serif.
  *
  * @param stateStore the store backing every screen. Defaults to a fresh one.
  */
 @Composable
 fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { defaultStateStore() }) {
-  val fonts = bundleImperialFonts()
-  ProvideImperialFonts(fonts = fonts) {
-    val state = stateStore.state
+  ProvideImperialFonts(fonts = bundleImperialFonts()) {
+    ArchiveAssistantTheme {
+      val state = stateStore.state
 
-    if (state.selectedPane == AppPane.SETTINGS) {
-      SettingsPane(
-        aiSettings = state.aiSettings,
-        onAiSettingsChanged = stateStore::updateAiSettings,
-        onBack = stateStore::closePanes,
-        localModelState = state.localModelState,
-        benchmarkResult = state.benchmarkResult,
-        isBenchmarkRunning = state.isBenchmarkRunning,
-        onDownloadModel = stateStore::downloadModel,
-        onCancelDownload = stateStore::cancelDownload,
-        onStartModel = stateStore::startModel,
-        onStopModel = stateStore::stopModel,
-        onBackendPreferenceChange = stateStore::updateBackendPreference,
-        onRunBenchmark = stateStore::runBenchmark,
-        // Left inert on purpose: choosing a model file needs a native file picker that does not
-        // exist yet, and a callback that pretends to work would be worse than one that is visibly
-        // absent. The button is still drawn; tapping it does nothing.
-        onChooseModelFile = {},
-      )
-    } else {
-      // No other pane is migrated into this module yet. Say so rather than rendering an empty box,
-      // which would be indistinguishable from a layout bug.
-      NotYetMigratedPane()
+      if (state.selectedPane == AppPane.SETTINGS) {
+        SettingsPane(
+          aiSettings = state.aiSettings,
+          onAiSettingsChanged = stateStore::updateAiSettings,
+          onBack = stateStore::closePanes,
+          localModelState = state.localModelState,
+          benchmarkResult = state.benchmarkResult,
+          isBenchmarkRunning = state.isBenchmarkRunning,
+          onDownloadModel = stateStore::downloadModel,
+          onCancelDownload = stateStore::cancelDownload,
+          onStartModel = stateStore::startModel,
+          onStopModel = stateStore::stopModel,
+          onBackendPreferenceChange = stateStore::updateBackendPreference,
+          onRunBenchmark = stateStore::runBenchmark,
+          // Left inert on purpose: choosing a model file needs a native file picker that does not
+          // exist yet, and a callback that pretends to work would be worse than one that is visibly
+          // absent. The button is still drawn; tapping it does nothing.
+          onChooseModelFile = {},
+        )
+      } else {
+        // No other pane is migrated into this module yet. Say so rather than rendering an empty box,
+        // which would be indistinguishable from a layout bug.
+        NotYetMigratedPane()
+      }
     }
   }
 }
@@ -106,7 +108,12 @@ private fun bundleImperialFonts(): ImperialFonts =
 
 @Composable
 private fun NotYetMigratedPane() {
-  Box(modifier = Modifier.fillMaxSize().background(ImperialIvory), contentAlignment = Alignment.Center) {
+  // Reads the scheme rather than the ImperialIvory literal it used before the theme existed, so the
+  // message stays legible in dark mode too. Text colour was already scheme-driven.
+  Box(
+    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+    contentAlignment = Alignment.Center,
+  ) {
     Text(
       text = "共享 Compose 层还没有可显示的面板。\n设置页已就绪，主页与详情页仍在迁移中。",
       color = MaterialTheme.colorScheme.onSurfaceVariant,
