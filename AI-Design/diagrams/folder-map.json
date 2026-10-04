@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "聚合拾遗 仓库文件夹功能表",
+    "output": "AI-Design/diagrams/folder-map.html",
+    "animation": "trace",
+    "viewBox": [1000, 900],
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "root",
+      "type": "backend",
+      "label": "仓库根目录",
+      "sublabel": "gradlew / settings.gradle.kts",
+      "pos": [100, 60],
+      "size": [150, 62]
+    },
+    {
+      "id": "gradle",
+      "type": "backend",
+      "label": "gradle/",
+      "sublabel": "libs.versions.toml",
+      "pos": [430, 60],
+      "size": [150, 62]
+    },
+    {
+      "id": "iosapp",
+      "type": "frontend",
+      "label": "iosApp/",
+      "sublabel": "Swift 源 + Xcode 工程",
+      "pos": [430, 180],
+      "size": [150, 62]
+    },
+    {
+      "id": "shared",
+      "type": "backend",
+      "label": "shared/",
+      "sublabel": "KMP 模块 + 构建脚本",
+      "pos": [430, 300],
+      "size": [150, 62]
+    },
+    {
+      "id": "common",
+      "type": "backend",
+      "label": "shared/commonMain/",
+      "sublabel": "domain / data / state / ui",
+      "pos": [430, 420],
+      "size": [150, 62]
+    },
+    {
+      "id": "androidMain",
+      "type": "backend",
+      "label": "shared/androidMain/",
+      "sublabel": "OkHttp / res / filesDir",
+      "pos": [60, 550],
+      "size": [150, 62]
+    },
+    {
+      "id": "iosMain",
+      "type": "backend",
+      "label": "shared/iosMain/",
+      "sublabel": "Darwin / NSBundle",
+      "pos": [430, 550],
+      "size": [150, 62]
+    },
+    {
+      "id": "desktopMain",
+      "type": "backend",
+      "label": "shared/desktopMain/",
+      "sublabel": "jvm(desktop) 编译与测试",
+      "pos": [800, 550],
+      "size": [150, 62]
+    },
+    {
+      "id": "github",
+      "type": "cloud",
+      "label": ".github/workflows/",
+      "sublabel": "ios-build.yml",
+      "pos": [800, 300],
+      "size": [150, 62]
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "app/",
+      "sublabel": "遗留 Android 应用",
+      "pos": [100, 180],
+      "size": [150, 62]
+    },
+    {
+      "id": "aidesign",
+      "type": "backend",
+      "label": "AI-Design/",
+      "sublabel": "设计与迁移计划",
+      "pos": [100, 300],
+      "size": [150, 62]
+    },
+    {
+      "id": "docs",
+      "type": "backend",
+      "label": "docs/",
+      "sublabel": "迁移分析文档",
+      "pos": [100, 420],
+      "size": [150, 62]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "iOS 交付链路",
+      "wraps": ["iosapp", "shared", "common", "iosMain", "desktopMain", "github"]
+    },
+    {
+      "kind": "security-group",
+      "label": "只作参照，不再演进",
+      "wraps": ["app"]
+    }
+  ],
+  "connections": [
+    { "from": "root", "to": "gradle", "label": "声明模块与版本" },
+    { "from": "root", "to": "app", "label": "旧入口", "labelDy": 45 },
+    { "from": "app", "to": "aidesign", "label": "迁移依据", "labelDy": 45 },
+    { "from": "aidesign", "to": "docs", "label": "分析产物", "variant": "dashed", "labelDy": 45 },
+    { "from": "gradle", "to": "iosapp", "label": "Xcode 工程", "labelDy": 45 },
+    { "from": "iosapp", "to": "shared", "label": "SharedKit", "variant": "emphasis", "labelDy": 45 },
+    { "from": "gradle", "to": "github", "label": "流水线任务" },
+    { "from": "shared", "to": "common", "label": "四处源集", "labelDy": 45 },
+    { "from": "common", "to": "androidMain", "label": "expect / actual", "variant": "dashed" },
+    { "from": "common", "to": "iosMain", "label": "expect / actual", "variant": "dashed", "labelDy": 45 },
+    { "from": "common", "to": "desktopMain", "label": "expect / actual", "variant": "dashed" },
+    { "from": "desktopMain", "to": "github", "label": "desktopTest 快速失败", "labelDx": -40 },
+    { "from": "github", "to": "iosapp", "label": "打包未签名 IPA", "variant": "emphasis", "labelDx": 90 }
+  ],
+  "cards": [
+    {
+      "dot": "slate",
+      "title": "先看这三处",
+      "items": [
+        "settings.gradle.kts 决定有哪些模块",
+        "gradle/libs.versions.toml 是依赖版本唯一来源",
+        "AI-Design/07-ios-migration-plan.md 是迁移权威计划"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "共享内核的四层",
+      "items": [
+        "domain：六部制分类、提示词、JSON 提取",
+        "data：Ktor 传输与供应商请求响应",
+        "state：ArchiveAssistantStateStore",
+        "platform：expect/actual 接缝定义处"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "这台机器能做与不能做",
+      "items": [
+        "Windows 能编译并测试 desktop 目标",
+        "iOS 目标与 Xcode 打包必须 macOS",
+        ":app 已冻结，只作参照不再演进"
+      ]
+    }
+  ]
+}

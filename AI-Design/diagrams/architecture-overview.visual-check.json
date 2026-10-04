@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "visual-check",
+  "status": "skipped",
+  "visualReview": "pending",
+  "artifact": {
+    "path": "D:\\Repo\\labs-archiveassistant-iOS\\AI-Design\\diagrams\\architecture-overview.html",
+    "sha256": "0ba7622ca62c6d92f55fc562f717bc28eec1e7b6b00f1f8d7a9656a0ed3fa416",
+    "bytes": 647542
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "unavailable",
+    "executable": null
+  },
+  "containment": {
+    "status": "skipped",
+    "viewports": []
+  },
+  "captures": {
+    "status": "skipped",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "architecture-overview.visual-check.json",
+    "contactSheet": "architecture-overview.visual-check.html"
+  },
+  "error": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path."
+}

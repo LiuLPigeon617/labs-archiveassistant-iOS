@@ -263,9 +263,19 @@ Notes worth keeping:
 
 | Seam | Android | iOS / desktop |
 |---|---|---|
-| `archivePainter(name): Painter?` | `res/drawable` via `getIdentifier` | null for now; callers degrade to a placeholder. Needs art in `commonMain/composeResources` |
+| `archivePainter(name): Painter?` | commonMain: `painterResource(Res.drawable.*)` | same code on every target |
 | `archivePainterOrPlaceholder(name): Painter` | same, falling back to a transparent painter | transparent painter of the requested size |
 | `archiveFontFamily(name): FontFamily?` | `res/font` via `getIdentifier` | null; theme falls back to `FontFamily.Serif` |
+
+`archivePainter` is **no longer expect/actual**. It is one `commonMain` function that resolves names
+through the Compose Multiplatform resource pack in `src/commonMain/composeResources/drawable`, so the
+same art reaches every target. The three per-platform `ArchivePainter.<target>.kt` files are deleted;
+the Android actual's `getIdentifier` path could never have worked anyway, because `:shared` cannot see
+`:app`'s `res/drawable` namespace.
+
+`bundledDrawable(name)` in `archivePainter`'s file is the single source of truth for which names
+resolve. Adding an asset is a two-step change: copy the file into `composeResources/drawable`, then
+add its `when` branch. Names with no branch return `null`, which is how callers degrade.
 
 Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
 private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
@@ -285,14 +295,40 @@ Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locall
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a
    pure `AndroidView` wrapper around `MemorialFoldView`.
-4. Move mock artwork into `commonMain/composeResources` so `archivePainter` returns real painters on
-   iOS, and the same for the three calligraphic TTFs.
+4. Finish the artwork move begun in this revision: **10 of 49 referenced assets** are now in
+   `commonMain/composeResources`. The rest, and the three calligraphic TTFs, still resolve to `null`.
+   Read the size finding below before copying the remainder.
 5. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
    point, and wire it to `ArchiveAssistantStateStore`.
 6. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
 7. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 8. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 9. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+
+### Artwork size: the remainder is not a free move
+
+The 49 asset names referenced by Kotlin code total **44.9 MB** in `app/src/main/res`, against an
+unsigned IPA that currently ships at ~5.2 MB. Copying them verbatim would add roughly 45 MB to the
+bundle, so this is a bundling decision, not a mechanical copy.
+
+Where the weight is, and what it implies:
+
+| Asset(s) | Size | Note |
+|---|---|---|
+| `home_search_tile.jpg` | 13.5 MB | 5400x3600 for a paper texture drawn scaled-to-fit behind a panel |
+| 22 x `memorial_cover_*.jpg` | ~28 MB total | 750x891..750x1053, ~0.9-1.7 MB each |
+| everything else referenced | ~3.4 MB | ornaments, stamps, patterns, completion art |
+
+Two facts make this cheaper than the raw number suggests:
+
+- **41 of the 49 assets are referenced only by the memorial reader** (`MemorialBriefingPane`,
+  `MemorialFoldView` and friends). That reader is remaining work #3, an explicit refactor with a
+  performance budget, so its art has no reason to land before it does.
+- **`home_search_tile.jpg` is mis-sized, not genuinely large.** At 5400x3600 it is ~30x the linear
+  need of its two call sites. Resampling it to ~1600 px and re-encoding removes >13 MB on its own.
+
+Recommended order: resample `home_search_tile` first, then bundle the UI-chrome assets the migrated
+panes actually use, and let the memorial covers arrive with the memorial-reader refactor.
 
 ### Known gaps that are not yet a numbered item
 
