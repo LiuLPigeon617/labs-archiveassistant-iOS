@@ -134,9 +134,20 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 
 **`iosApp/iosApp/Info.plist` 里的 `CADisableMinimumFrameDurationOnPhone` 不能删。** Compose Multiplatform 在进程启动时会校验这一项，缺失或为 `false` 就抛 `IllegalStateException` 并让 App 直接崩溃——而且它是在 SwiftUI 外壳启动之后才生效，所以「外壳正常」并不代表共享界面没问题。它也不是纯粹的仪式：没有这一项，iOS 会在 ProMotion 机型上把 App 限制在 60 Hz。这个坑是截图冒烟测试第一次运行时抓到的，详见 `AI-Design/07-ios-migration-plan.md` 的模拟器冒烟测试一节。
 
-最近一次验证过的构建（提交 `135d2f2`，运行 37199938026）全绿：工作流全部步骤通过，产出的未签名 IPA 为 14,170,223 字节，共享内核的单测报告与 `xcodebuild` 日志一并作为构建产物上传。主题移植提交 `f402b86` 只改 `commonMain`（新增 `Theme.kt`、调整根组件），本地以 `desktop` 目标验证通过。
+**Compose 的 `compose-resources` 必须由 Xcode 构建阶段同步进 App 包，不能只靠 Gradle 编出 framework。** Compose Multiplatform 不把字体和图片放进 framework，而是用 `SyncComposeResourcesForIosTask` 拷进 App 包，插件把这个任务挂在 `embedAndSign<Framework>AppleFrameworkForXcode` 上。本项目在 `iosApp/iosApp.xcodeproj` 的「Build SharedKit.xcframework」阶段手工暂存 XCFramework、从不走那条链，因此该目录一直是空的，App 一读字体就抛 `MissingResourceException` 崩溃——**编译器、链接器与 `codesign` 都看不出这个问题**，只有真正运行才发现。现在该构建阶段会显式运行这个同步任务（任务名按 framework classifier 推导，用 `:shared:tasks --all` 在运行时发现，不硬编码），两个 CI 作业也都在构建产物上断言 `compose-resources` 里至少有 `.ttf`。
 
-体积变化值得注意：前一次全绿构建（`10a44a8`）的 IPA 为 5,650,070 字节，接入 Compose 根组件后升到 14,170,223 字节，差额基本就是两个书法字体。字体此前虽已入包，但没有任何代码引用，因此在 iOS 产物里被当作未使用资源而未被打进 App；根组件开始调用 `archiveFontFamily` 后它们才真正随包发布。TTF 本身已内部压缩，重新编码图片无法回收这部分体积，唯一有效的杠杆是按需子集化字体。
+最近一次验证过的构建（提交 `4b0547c`，运行 37214783385）两个作业全绿：`Build unsigned IPA` 与 `Simulator smoke (screenshots)` 都通过，模拟器截图里能看到真实的共享 Compose 设置界面，未签名 IPA 为 23,392,233 字节。共享内核的单测报告、`xcodebuild` 日志与三张截图一并作为构建产物上传。
+
+体积变化值得注意，而这里有一条**容易搞反的归因**：
+
+| 提交 | 状态 | IPA 字节数 |
+|---|---|---|
+| `10a44a8` | Compose 根组件之前 | 5,650,070 |
+| `135d2f2` | 接入 Compose 根组件 | 14,170,223 |
+| `4b0547c` | 修复 `compose-resources` 同步 | 23,392,233 |
+
+第一段涨幅（+8.52 MB）**不是字体**——那时字体根本不在 App 包里，涨的是把 Compose 运行时（UIKit/Skia 及其资源）链进 App 的开销。第二段（+9.22 MB）才是字体与图片：两个书法字体原始 12,917,432 字节、12 个 drawable 约 1.48 MB，压缩后落在 `compose-resources` 里。所以「字体占了绝大部分体积」这个结论到这一步才成立，而且它的前提是资源真的被打进了包——在 `4b0547c` 之前，它们既没进包，也没人发现。
+
 
 ## 项目结构
 

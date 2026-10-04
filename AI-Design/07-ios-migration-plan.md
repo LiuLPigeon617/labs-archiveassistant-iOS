@@ -137,34 +137,37 @@ in a dedicated step; the in-Xcode build phase remains for developers building fr
 documents that a first build either needs the Gradle task run once or stages the framework for the
 next build.
 
-Status: the pipeline is green, and it has a real green run behind it — **run 37199938026 on
-`135d2f2`**, job "Build unsigned IPA", conclusion `success`, all 15 steps plus the 4 post steps
-green (11 minutes; step 8, building `SharedKit.xcframework`, is the slow one). That run is also the
-only iOS verification the Compose root has: it compiles `iosArm64` and archives the app, so it covers
-both `ArchiveRootViewController.kt` and the Swift changes. Before `10a44a8` the workflow had **never**
-passed.
+Status: the pipeline is green, and it has real green runs behind it. **Run 37214783385 on `4b0547c`**
+is the strongest one: both jobs — `Build unsigned IPA` and `Simulator smoke (screenshots)` — concluded
+`success`, and the simulator produced three screenshots of the app actually rendering the shared Compose
+settings pane. An earlier milestone was **run 37199938026 on `135d2f2`**, the first run whose Compose
+root compiled and archived (15 steps plus 4 post steps, 11 minutes). Before `10a44a8` the workflow had
+**never** passed.
 
-The workflow now has a **second job**, `Simulator smoke (screenshots)`, which runs in parallel and does
+The workflow has a **second job**, `Simulator smoke (screenshots)`, which runs in parallel and does
 not gate the IPA. It exists because a green archive build proved nothing about what the app draws; see
 the section below. Note that the parallel job roughly doubles the runner time of the workflow.
 
-Artifacts from that run: `JuHeShiYi-unsigned-ipa-Release` **14,170,223 B (~13.5 MB)**,
-`xcodebuild-log` 13,547 B, `shared-test-results` 6,402 B. The IPA contains
-`Payload/聚合拾遗.app/` with the executable, `Assets.car`, app icons and `Info.plist`.
+Artifacts from run 37214783385: `JuHeShiYi-unsigned-ipa-Release` **23,392,233 B (~22.3 MB)**,
+`ios-simulator-smoke` 4,744,378 B, `xcodebuild-log` 14,009 B, `simulator-xcodebuild-log` 14,333 B,
+`shared-test-results` 6,397 B. The IPA contains `Payload/聚合拾遗.app/` with the executable,
+`Assets.car`, app icons, `Info.plist`, and — only since `4b0547c` — a populated `compose-resources/`.
 
-The IPA size is the number to watch now that the assets are bundled, and the jump across these two
-green runs is worth reading correctly:
+The IPA size is worth watching now that the assets are bundled, but the attribution across these runs is
+**not** what it first looked like:
 
 | Run | Commit | IPA |
 |---|---|---|
 | 37195349460 | `10a44a8` | 5,650,070 B (~5.4 MB) |
 | 37199938026 | `135d2f2` | 14,170,223 B (~13.5 MB) |
+| 37214783385 | `4b0547c` | 23,392,233 B (~22.3 MB) |
 
-The delta **is** the fonts: +8.5 MB. They were already in `composeResources/font` at `10a44a8`, but
-nothing referenced `Res.font.*` yet, so the resource pipeline had no reason to put the TTFs in the
-app bundle. Adding the Compose root — which calls `archiveFontFamily` — made them reachable and they
-started shipping. So this is not a regression from the root; it is what bundling two full CJK faces
-costs, and it was always going to arrive with the first caller.
+The first delta (+8.52 MB) was originally recorded here as "the fonts", and that was wrong: the fonts
+were not in the bundle at all, because the Compose resource sync task never ran (see the simulator smoke
+section). That 8.52 MB is the cost of linking the Compose runtime — UIKit/Skia and its own resources —
+which is what made the root component work. The second delta (+9.22 MB) is the fonts and drawables
+arriving for real: 12,917,432 bytes of TTF plus ~1.48 MB of drawables, compressed inside
+`compose-resources`. The conclusion "the fonts dominate the IPA" only holds from `4b0547c` onward.
 
 Unlike the JPEGs, the TTFs are already internally compressed, so zip gains almost nothing on them:
 re-encoding art will not recover this. If bundle size becomes a release concern, subsetting the two
@@ -213,22 +216,29 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 
 **What the pixel check does and does not prove.** `.github/scripts/check-screenshot.swift` decodes each
 PNG, quantises colours to 5 bits per channel and fails if fewer than 25 distinct colours appear. The
-threshold is calibrated against real captures rather than guessed — measured on the screenshots from
-run 37203635522 with the same sampling and quantisation the script uses:
+threshold is calibrated against real captures rather than guessed — measured with the same sampling and
+quantisation the script uses, on run 37203635522 (where every Compose launch crashed) and run 37214783385
+(the first run where Compose actually rendered):
 
-| capture | distinct colours |
-|---|---|
-| genuinely blank screen | 1–3 |
-| native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** |
-| Compose tree, light | 2663 |
-| springboard fallback after a crash | 2822 |
+| capture | distinct colours | source |
+|---|---|---|
+| genuinely blank screen | 1–3 | — |
+| native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
+| Compose settings, light | **167** | 37214783385 |
+| Compose settings, dark | **154** | 37214783385 |
+| springboard fallback after a crash | **2663 / 2822** | 37203635522 |
 
 The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
-sparse native shell comfortable room while still sitting far above a blank screen. Note the last row:
-a crashed app's screenshot is *the most colourful image of the four*, so this check cannot detect the
+sparse native shell comfortable room while still sitting far above a blank screen. Note the last row: a
+crashed app's screenshot is *the most colourful image of the five*, so this check cannot detect the
 failure that matters most. It catches exactly one thing — a blank, flat or unmounted screen — and will
 happily pass a screen that is wrong in every other way. Read the images; the check exists so that an
 empty screen fails the build instead of being uploaded and quietly ignored.
+
+This table was first written from the crashed run, where I mislabelled both springboard captures as
+Compose screens; the real Compose tree is *sparse* (154–167 colours), not colour-rich. The correction
+matters because it inverts the intuition the numbers were meant to support: rich colour is the signature
+of the failure, not of success.
 
 **The trap this job is built around.** A failed launch leaves the screenshot showing the simulator
 home screen — colourful, full of icons, and passing every pixel check. So the script never trusts a
@@ -268,6 +278,63 @@ Two things follow, and both generalise:
   complaint. That is precisely why crash detection, not the pixel check, is what makes this artifact
   trustworthy: the pixel check proves a screen is not blank and nothing more, and a crashed app is not
   blank.
+
+**Second real find (run 37211879390), and this one was shipping: the app bundle had no `compose-resources`.**
+Once the plist key was in place the app finally reached Compose and aborted there instead:
+
+```
+Uncaught Kotlin exception: org.jetbrains.compose.resources.MissingResourceException:
+Missing resource with path: .../聚合拾遗.app/compose-resources/
+  juheshiyi.shared.generated.resources/font/san_ji_xing_kai_jian_ti_cu.ttf
+    at ... kfun:com.lyihub.archiveassistant.ui#archiveFontFamily(...)
+    at ... kfun:com.lyihub.archiveassistant.ui#ArchiveAssistantRoot(...)
+```
+
+Compose Multiplatform does **not** put its resources inside the framework. It copies them into the app
+bundle with `SyncComposeResourcesForIosTask`, and the plugin wires that task to
+`embedAndSign<Framework>AppleFrameworkForXcode`. This project stages the XCFramework by hand in a build
+phase and therefore never runs that task: the framework compiled and linked correctly, and the fonts were
+simply absent at runtime.
+
+That is why this is more than a test artifact. **The 5.4 MB unsigned IPA the other CI job had been
+producing since the Compose root landed would have aborted on launch on a real device in exactly the same
+way.** Nothing in the pipeline could see it: a missing runtime resource is invisible to the compiler, to
+the linker, and to `codesign`, and the archive step only ever checked that an `.app` and an IPA came out.
+The screenshots are what forced the issue into the open.
+
+The fix runs the sync from the "Build SharedKit.xcframework" build phase — it has to be a build phase and
+not a CI step before `xcodebuild`, because the task resolves its output location from Xcode's
+`BUILT_PRODUCTS_DIR` and `UNLOCALIZED_RESOURCES_FOLDER_PATH`. The task name is derived from the framework
+classifier (`sync${getClassifier()}ComposeResourcesForIos`), so the phase discovers it via
+`./gradlew :shared:tasks --all` instead of hardcoding a name that would silently rot, and fails if the
+directory is still empty afterwards.
+
+Both jobs now assert the two launch preconditions on the **built product**, so this class of regression
+fails the build rather than shipping: the simulator job checks its `.app`, and the IPA job checks the
+`Payload` app that goes into the archive — at least one `.ttf` under `compose-resources`, plus the plist
+key. Checking the artifact people actually install matters more than checking the one under test.
+
+**First green run with the Compose tree actually on screen (run 37214783385, commit `4b0547c`).** Both
+jobs pass. The simulator job reports 3 screenshots, 0 crash reports, and the images are the first real
+evidence of what the shared UI looks like on iOS: the settings pane renders with the Sanxingdui
+calligraphic title font, the xuan-paper background texture, and the cinnabar/terracotta action button.
+The font question that motivated this whole path is answered — `archiveFontFamily` resolves and the
+typeface paints, rather than silently falling back to a system serif.
+
+Two numbers from this run correct earlier claims in this document:
+
+| build | state | IPA bytes |
+|---|---|---|
+| `10a44a8` | before the Compose root | 5,650,070 |
+| `135d2f2` | Compose root wired in | 14,170,223 |
+| `4b0547c` | `compose-resources` actually shipped | 23,392,233 |
+
+The first jump (+8.52 MB) was attributed to the fonts at the time, and that was wrong: the fonts were not
+in the bundle at all until `4b0547c`. That 8.52 MB is the cost of linking the Compose runtime
+(UIKit/Skia and its own resources) into the app. The second jump (+9.22 MB) is what the fonts and
+drawables actually cost — 12,917,432 bytes of TTF plus ~1.48 MB of drawables, compressed inside
+`compose-resources`. So "the fonts dominate the IPA" only becomes true once they are genuinely packaged,
+which is exactly what this section had to fix first.
 
 **Not covered yet:** iPad, landscape, and any interaction past first presentation. The workflow builds
 for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only, so the iPad layout
@@ -565,9 +632,10 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 ### Artwork size: the remainder is not a free move
 
 The 49 asset names referenced by Kotlin code total **44.9 MB** in `app/src/main/res`. For scale: the
-unsigned IPA measured 5,650,070 B after the first green CI run, and 14,170,223 B once the root began
-actually resolving `Res.font.*` and the two TTFs started shipping. Copying the remaining artwork
-verbatim would add tens of MB on top — this is a bundling decision, not a mechanical copy.
+unsigned IPA measured 5,650,070 B after the first green CI run, 14,170,223 B once the Compose root was
+wired in, and 23,392,233 B at `4b0547c` once `compose-resources` was genuinely packaged — the last jump
+being the fonts and the 12 already-migrated drawables. Copying the remaining artwork verbatim would add
+tens of MB on top — this is a bundling decision, not a mechanical copy.
 
 Where the weight is, and what it implies:
 
