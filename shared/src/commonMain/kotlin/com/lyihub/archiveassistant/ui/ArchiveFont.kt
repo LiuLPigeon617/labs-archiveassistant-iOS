@@ -21,9 +21,9 @@ import org.jetbrains.compose.resources.FontResource
  * [bundledFont] is the single source of truth for which names resolve — keep it in sync with the
  * contents of `composeResources/font`.
  *
- * Note: nothing calls this yet. `LocalImperialFonts` currently always holds its default
- * (`FontFamily.Serif`) because no root composable installs `ProvideImperialFonts`. Wiring that up
- * belongs with the real Compose entry point, not here.
+ * Callers: `ArchiveAssistantRoot`, which installs the resolved faces through `ProvideImperialFonts`.
+ * Before that root existed nothing called this, so `LocalImperialFonts` always held its
+ * `FontFamily.Serif` default and every pane rendered fallback glyphs.
  */
 @Composable
 fun archiveFontFamily(assetName: String): FontFamily? =
