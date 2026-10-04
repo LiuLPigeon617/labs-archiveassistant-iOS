@@ -277,6 +277,13 @@ the Android actual's `getIdentifier` path could never have worked anyway, becaus
 resolve. Adding an asset is a two-step change: copy the file into `composeResources/drawable`, then
 add its `when` branch. Names with no branch return `null`, which is how callers degrade.
 
+**Every asset the migrated shared UI actually references is now bundled.** Only two names were still
+outstanding, and both are in: `home_search_tile` (SettingsPane) and `memorial_xuan_paper`
+(XuanPaperBackground). The pack holds 12 files / 1.48 MB. `home_search_tile` was resampled from
+5400x3600 (13.5 MB) to 1620x1080 (464 KB, ~3.4%) — it is drawn `ContentScale.Crop` as a paper texture
+under a panel, so the original resolution was ~3.3x beyond what any iPad renders, and 1620 px keeps a
+30% linear sample of the source. If it ever looks soft on a large display, 2160x1440 costs 864 KB.
+
 Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
 private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
 
@@ -295,9 +302,10 @@ Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locall
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a
    pure `AndroidView` wrapper around `MemorialFoldView`.
-4. Finish the artwork move begun in this revision: **10 of 49 referenced assets** are now in
-   `commonMain/composeResources`. The rest, and the three calligraphic TTFs, still resolve to `null`.
-   Read the size finding below before copying the remainder.
+4. Finish the artwork move. **All 12 assets referenced by the migrated shared UI are bundled** (see
+   the seams table above). What remains is art referenced *only* by screens that have not been
+   migrated yet, plus the three calligraphic TTFs, which still resolve to `null`. Read the size
+   finding below before copying any of it.
 5. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
    point, and wire it to `ArchiveAssistantStateStore`.
 6. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
@@ -324,11 +332,11 @@ Two facts make this cheaper than the raw number suggests:
 - **41 of the 49 assets are referenced only by the memorial reader** (`MemorialBriefingPane`,
   `MemorialFoldView` and friends). That reader is remaining work #3, an explicit refactor with a
   performance budget, so its art has no reason to land before it does.
-- **`home_search_tile.jpg` is mis-sized, not genuinely large.** At 5400x3600 it is ~30x the linear
-  need of its two call sites. Resampling it to ~1600 px and re-encoding removes >13 MB on its own.
+- **`home_search_tile.jpg` is mis-sized, not genuinely large.** At 5400x3600 it is ~3.3x the linear
+  need of its call site. Resampling it to 1620x1080 and re-encoding took it from 13.5 MB to 464 KB.
 
-Recommended order: resample `home_search_tile` first, then bundle the UI-chrome assets the migrated
-panes actually use, and let the memorial covers arrive with the memorial-reader refactor.
+So the rule for the remainder: bundle an asset when a *shared* screen needs it, at a size matched to
+how it is drawn; let the memorial covers arrive with the memorial-reader refactor, resampled then.
 
 ### Known gaps that are not yet a numbered item
 

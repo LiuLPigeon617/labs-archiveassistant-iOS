@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import juheshiyi.shared.generated.resources.Res
 import juheshiyi.shared.generated.resources.home_ornament_clipboard_sanxingdui
+import juheshiyi.shared.generated.resources.home_search_tile
 import juheshiyi.shared.generated.resources.imperial_ornament_pattern
 import juheshiyi.shared.generated.resources.memorial_button_bg
 import juheshiyi.shared.generated.resources.memorial_completion_bg
@@ -15,6 +16,7 @@ import juheshiyi.shared.generated.resources.memorial_cover_pattern
 import juheshiyi.shared.generated.resources.memorial_stamp_dislike
 import juheshiyi.shared.generated.resources.memorial_stamp_like
 import juheshiyi.shared.generated.resources.memorial_touch_book
+import juheshiyi.shared.generated.resources.memorial_xuan_paper
 import juheshiyi.shared.generated.resources.pending_note_stamp
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -45,6 +47,7 @@ fun archivePainter(assetName: String): Painter? =
 private fun bundledDrawable(assetName: String): DrawableResource? =
   when (assetName) {
     "home_ornament_clipboard_sanxingdui" -> Res.drawable.home_ornament_clipboard_sanxingdui
+    "home_search_tile" -> Res.drawable.home_search_tile
     "imperial_ornament_pattern" -> Res.drawable.imperial_ornament_pattern
     "memorial_button_bg" -> Res.drawable.memorial_button_bg
     "memorial_completion_bg" -> Res.drawable.memorial_completion_bg
@@ -53,6 +56,7 @@ private fun bundledDrawable(assetName: String): DrawableResource? =
     "memorial_stamp_dislike" -> Res.drawable.memorial_stamp_dislike
     "memorial_stamp_like" -> Res.drawable.memorial_stamp_like
     "memorial_touch_book" -> Res.drawable.memorial_touch_book
+    "memorial_xuan_paper" -> Res.drawable.memorial_xuan_paper
     "pending_note_stamp" -> Res.drawable.pending_note_stamp
     else -> null
   }
