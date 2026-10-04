@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "ok": false,
   "command": "visual-check",
-  "status": "skipped",
+  "status": "fail",
   "visualReview": "pending",
   "artifact": {
     "path": "D:\\Repo\\labs-archiveassistant-iOS\\AI-Design\\diagrams\\folder-map.html",
@@ -14,21 +14,130 @@
     "motion": "still"
   },
   "chrome": {
-    "status": "unavailable",
-    "executable": null
+    "status": "available",
+    "executable": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
   },
   "containment": {
-    "status": "skipped",
-    "viewports": []
+    "status": "fail",
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "innerWidth": 1440,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "scrollHeight": 1515,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light"
+      },
+      {
+        "width": 1600,
+        "height": 1000,
+        "theme": "light",
+        "innerWidth": 1600,
+        "innerHeight": 1000,
+        "scrollWidth": 1600,
+        "scrollHeight": 1584,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light"
+      },
+      {
+        "width": 1920,
+        "height": 1080,
+        "theme": "light",
+        "innerWidth": 1920,
+        "innerHeight": 1080,
+        "scrollWidth": 1920,
+        "scrollHeight": 1584,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light"
+      },
+      {
+        "width": 2048,
+        "height": 1320,
+        "theme": "light",
+        "innerWidth": 2048,
+        "innerHeight": 1320,
+        "scrollWidth": 2048,
+        "scrollHeight": 1618,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light"
+      }
+    ]
   },
   "captures": {
-    "status": "skipped",
-    "screenshots": [],
-    "contactSheet": null
+    "status": "pass",
+    "screenshots": [
+      {
+        "width": 1440,
+        "height": 900,
+        "theme": "light",
+        "innerWidth": 1440,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "scrollHeight": 1515,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light",
+        "file": "folder-map.visual-check.1440x900.light.png"
+      },
+      {
+        "width": 1440,
+        "height": 900,
+        "theme": "dark",
+        "innerWidth": 1440,
+        "innerHeight": 900,
+        "scrollWidth": 1440,
+        "scrollHeight": 1520,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "dark",
+        "file": "folder-map.visual-check.1440x900.dark.png"
+      },
+      {
+        "width": 2048,
+        "height": 1320,
+        "theme": "light",
+        "innerWidth": 2048,
+        "innerHeight": 1320,
+        "scrollWidth": 2048,
+        "scrollHeight": 1618,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "light",
+        "file": "folder-map.visual-check.2048x1320.light.png"
+      },
+      {
+        "width": 2048,
+        "height": 1320,
+        "theme": "dark",
+        "innerWidth": 2048,
+        "innerHeight": 1320,
+        "scrollWidth": 2048,
+        "scrollHeight": 1618,
+        "overflowX": false,
+        "overflowY": true,
+        "ok": false,
+        "resolvedTheme": "dark",
+        "file": "folder-map.visual-check.2048x1320.dark.png"
+      }
+    ],
+    "contactSheet": "folder-map.visual-check.html"
   },
   "sidecars": {
     "receipt": "folder-map.visual-check.json",
     "contactSheet": "folder-map.visual-check.html"
-  },
-  "error": "Chrome or Chromium is unavailable. Set ARCHIFY_CHROME to its executable path."
+  }
 }

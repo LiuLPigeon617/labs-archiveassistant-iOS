@@ -381,6 +381,36 @@ how it is drawn; let the memorial covers arrive with the memorial-reader refacto
 - The plan's `multiplatform-settings` row in "Library swaps" is still *planned*, not done:
   no shared code calls it yet.
 
+### Visual verification of the diagrams (how to reproduce)
+
+The diagrams in `AI-Design/diagrams/` were verified visually. Chrome is **not** installed on this
+machine, but Edge is Chromium-based and `visual-check` accepts any Chromium executable through
+`ARCHIFY_CHROME`, so no install is needed:
+
+```powershell
+$env:ARCHIFY_CHROME = 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe'
+node bin/archify.mjs visual-check AI-Design/diagrams/architecture-overview.html --json
+node bin/archify.mjs visual-check AI-Design/diagrams/folder-map.html --json
+```
+
+This writes the four screenshots per diagram (1440x900 and 2048x1320, light and dark), the contact
+sheet and the receipt.
+
+**Read the receipt with care — `containment.status: fail` here is a false positive.** Every viewport
+reports `overflowY: true` because the page's scroll height exceeds the viewport height by 150–300 px,
+but the rendered SVG is complete: at 2048x1320 the last row of nodes, the legend and the toolbar are
+all inside the captured frame with blank page below them. The authoritative structural check is the
+skill's own render checker, which reports `ok: true`, `composition status: pass`, `errors: 0` and
+all nine checks green for both diagrams:
+
+```powershell
+node scripts/check-render-output.mjs AI-Design/diagrams/architecture-overview.html
+```
+
+The one real caveat: at a viewport height of 900 px the bottom row of `folder-map.html` is cut off
+because the page scrolls, so it should be viewed at 1320 px height (or scrolled) rather than judged
+from the 1440x900 screenshot.
+
 ## Tooling pitfalls encountered (avoid repeating)
 
 - **PowerShell scripts containing non-ASCII must be saved with a UTF-8 BOM.** PowerShell reads a
@@ -406,4 +436,11 @@ how it is drawn; let the memorial covers arrive with the memorial-reader refacto
 - **Reserve `write` for new files and `edit` for existing ones.** Rewriting a large existing file
   to change one import invalidates the read-tracking for that path and forces a re-read before the
   next edit.
+- **`Out-File -Encoding utf8` writes a BOM, and a BOM inside a git commit message is kept.** It
+  showed up as a literal ``docs:`` in `git log --oneline`. Write commit messages with
+  `[System.IO.File]::WriteAllText($path, $msg, (New-Object System.Text.UTF8Encoding($false)))` and
+  commit with `git commit -F`.
+- **A `git push` that succeeds still exits non-zero under PowerShell**, because git writes progress
+  to stderr and PowerShell turns native stderr into a `NativeCommandError`. Check the
+  `old..new  branch -> branch` line instead of trusting the exit code.
 
