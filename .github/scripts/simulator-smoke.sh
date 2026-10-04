@@ -17,7 +17,7 @@
 # Inputs (environment):
 #   APP_PATH       path to the built .app (default: the Debug-iphonesimulator product)
 #   ARTIFACT_DIR   where screenshots and logs land (default: build/simulator-smoke)
-#   MIN_DISTINCT   minimum distinct colours for a screenshot to count as rendered (default: 50)
+#   MIN_DISTINCT   minimum distinct colours for a screenshot to count as rendered (default: 25)
 #
 # Output: PNG screenshots, console/log captures, screenshot-checks.txt, summary.md in ARTIFACT_DIR.
 
@@ -29,7 +29,15 @@ PREVIEW_ARGUMENT="--compose-preview"
 
 APP_PATH="${APP_PATH:-build/SimDerivedData/Build/Products/Debug-iphonesimulator/${PRODUCT_NAME}.app}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
-MIN_DISTINCT="${MIN_DISTINCT:-50}"
+# Calibrated against real captures from run 37203635522 (measured at 4-pixel sampling, 5-bit colour
+# quantisation, exactly what check-screenshot.swift computes):
+#   native SwiftUI shell   86 distinct colours
+#   Compose tree, light  2663
+#   springboard fallback 2822   <- a crashed app passes any threshold, which is why crashes are
+#                                  detected separately rather than by this check
+# A genuinely blank screen sits at 1-3. The threshold is deliberately far from 86: the sparse native
+# shell is legitimate content and must not sit one shade away from failing.
+MIN_DISTINCT="${MIN_DISTINCT:-25}"
 
 log() { echo; echo "=== $* ==="; }
 die() { echo "::error::$*"; exit 1; }

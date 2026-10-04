@@ -212,10 +212,23 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 ```
 
 **What the pixel check does and does not prove.** `.github/scripts/check-screenshot.swift` decodes each
-PNG, quantises colours to 5 bits per channel and fails if fewer than 50 distinct colours appear. That
-catches exactly one thing: a blank, flat or unmounted screen. It **cannot** tell a correct layout from
-a broken one, and will happily pass a screen that is wrong in every other way. Read the images; the
-check exists so that an empty screen fails the build instead of being uploaded and quietly ignored.
+PNG, quantises colours to 5 bits per channel and fails if fewer than 25 distinct colours appear. The
+threshold is calibrated against real captures rather than guessed — measured on the screenshots from
+run 37203635522 with the same sampling and quantisation the script uses:
+
+| capture | distinct colours |
+|---|---|
+| genuinely blank screen | 1–3 |
+| native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** |
+| Compose tree, light | 2663 |
+| springboard fallback after a crash | 2822 |
+
+The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
+sparse native shell comfortable room while still sitting far above a blank screen. Note the last row:
+a crashed app's screenshot is *the most colourful image of the four*, so this check cannot detect the
+failure that matters most. It catches exactly one thing — a blank, flat or unmounted screen — and will
+happily pass a screen that is wrong in every other way. Read the images; the check exists so that an
+empty screen fails the build instead of being uploaded and quietly ignored.
 
 **The trap this job is built around.** A failed launch leaves the screenshot showing the simulator
 home screen — colourful, full of icons, and passing every pixel check. So the script never trusts a
