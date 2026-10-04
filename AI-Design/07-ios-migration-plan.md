@@ -222,9 +222,10 @@ home screen — colourful, full of icons, and passing every pixel check. So the 
 screenshot on its own. Per phase it: asserts the app is actually running (`assert_alive`, polling
 `simctl spawn ... launchctl list`), captures, stops, and then fails on any `.ips` crash report newer
 than the run marker, printing the console log tail so the cause is visible in the CI log instead of
-only inside the artifact. The first version of the liveness check also accepted a `bundle: <pid>` line
-from the launch output; that signal was dropped because `simctl` prints it when the launch is
-*requested*, not while the process is alive, so it waved through an app that had already crashed.
+only inside the artifact. The launch check accepts two signals, because neither is documented as
+guaranteed (`launchctl list` and the `bundle: <pid>` line), but the liveness check before a capture
+accepts only `launchctl list`: `simctl` prints the pid line when the launch is *requested*, not while
+the process is alive, so a crashed app still produces it.
 
 **First real find (run 37203635522): the app died on launch, and the screenshots were the home screen.**
 Both Compose launches aborted about two seconds in. The `.ips` report said only `EXC_CRASH` /
