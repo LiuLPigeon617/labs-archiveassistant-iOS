@@ -1,9 +1,16 @@
-name: iOS Build (unsigned IPA)
+name: iOS build and simulator smoke
 
-# Produces an UNSIGNED .ipa for build verification only.
-# An unsigned IPA cannot be installed on a physical device. Installing requires
-# a signing identity supplied via repository secrets; that step is intentionally
-# out of scope here so the workflow stays useful on forks and public repos.
+# Two independent jobs:
+#   ios-build            - produces an UNSIGNED .ipa for build verification only.
+#   ios-simulator-smoke  - runs the app on an iOS Simulator and captures screenshots, so the shared
+#                          Compose UI, its fonts and its palette are something you can look at rather
+#                          than infer from a green compile.
+# They run in parallel and neither is a prerequisite for the other.
+#
+# An unsigned IPA cannot be installed on a physical device. Installing requires a signing identity
+# supplied via repository secrets; that step is intentionally out of scope here so the workflow stays
+# useful on forks and public repos. The simulator needs no signing at all, which is why the smoke test
+# can run here.
 
 on:
   push:
@@ -207,5 +214,130 @@ jobs:
         with:
           name: shared-test-results
           path: shared/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # -------------------------------------------------------------------------------------------------
+  # Simulator smoke test
+  #
+  # Deliberately a separate job rather than steps appended to ios-build: a rendering regression and a
+  # packaging regression are different things, and a failure here should be unambiguous. Running in
+  # parallel also keeps this off the critical path of the IPA.
+  # -------------------------------------------------------------------------------------------------
+  ios-simulator-smoke:
+    name: Simulator smoke (screenshots)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log simulator inventory
+        run: |
+          echo "arch: ${{ runner.arch }}"
+          xcrun simctl list runtimes || true
+          echo "--- devices ---"
+          xcrun simctl list devices available | head -n 40 || true
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache Gradle and Kotlin/Native artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Xcode validates a linked .xcframework while planning the build graph, which happens before any
+      # run-script phase executes, so the framework has to exist at its referenced path first. Same
+      # staging as the IPA job; the XCFramework carries both device and simulator slices.
+      - name: Build and stage SharedKit.xcframework
+        run: |
+          echo "=== assembling SharedKit.xcframework (device + simulator) ==="
+          ./gradlew :shared:assembleSharedKitXCFramework --stacktrace
+
+          SRC=$(find shared/build/XCFrameworks -maxdepth 2 -name "SharedKit.xcframework" -type d | head -n 1)
+          if [ -z "$SRC" ]; then
+            echo "::error::SharedKit.xcframework not found under shared/build/XCFrameworks"
+            find shared/build -maxdepth 4 -name "*.xcframework" || true
+            exit 1
+          fi
+
+          DEST="iosApp/Frameworks"
+          mkdir -p "$DEST"
+          rm -rf "$DEST/SharedKit.xcframework"
+          cp -R "$SRC" "$DEST/"
+          echo "=== staged for Xcode: $DEST/SharedKit.xcframework ==="
+          ls -la "$DEST/SharedKit.xcframework"
+
+      - name: Build for the iOS Simulator
+        run: |
+          set -o pipefail
+
+          # ARCHS=arm64 is explicit: the shared kernel declares iosSimulatorArm64 only, so building the
+          # x86_64 slice too would fail to link. The runner is arm64; simulator-smoke.sh re-checks that.
+          #
+          # No signing overrides here, unlike the archive build: the iOS Simulator SDK expects an
+          # ad-hoc signature, and simctl install accepts the default product. Forcing
+          # CODE_SIGNING_ALLOWED=NO would produce an unsigned bundle for no benefit.
+          echo "=== xcodebuild build ( iOS Simulator, Debug ) ==="
+          xcodebuild \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build/SimDerivedData \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            build 2>&1 | tee build-simulator-xcodebuild.log | tail -n 40
+
+          APP="build/SimDerivedData/Build/Products/Debug-iphonesimulator/聚合拾遗.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::simulator app not found at $APP"
+            find build/SimDerivedData/Build/Products -maxdepth 2 -name "*.app" || true
+            exit 1
+          fi
+          echo "=== built: $APP ==="
+
+          echo "=== signature ==="
+          codesign -dv --verbose=2 "$APP" 2>&1 || true
+
+      - name: Run simulator smoke test
+        run: ./.github/scripts/simulator-smoke.sh
+
+      - name: Upload simulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-smoke
+          path: |
+            build/simulator-smoke/*.png
+            build/simulator-smoke/*.txt
+            build/simulator-smoke/*.log
+            build/simulator-smoke/summary.md
+            build/simulator-smoke/*.ips
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload simulator build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-xcodebuild-log
+          path: build-simulator-xcodebuild.log
           if-no-files-found: ignore
           retention-days: 14

@@ -1,5 +1,19 @@
 import SwiftUI
 
+/// Launch-time switches used by the CI simulator smoke test.
+///
+/// These exist because `xcrun simctl launch` can pass arguments but cannot tap a toolbar button, so a
+/// screenshot of the migrated Compose tree would otherwise need a UI-automation target. Acting on
+/// these flags is the whole of their effect — they do not change what the app renders, only where it
+/// starts.
+enum LaunchOptions {
+  /// Open the shared Compose tree immediately instead of the two-column shell.
+  ///
+  /// Used by `.github/scripts/simulator-smoke.sh` to capture the migrated settings pane, and usable
+  /// by hand: `xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview`.
+  static let opensComposePreview = ProcessInfo.processInfo.arguments.contains("--compose-preview")
+}
+
 /// iPad-first shell: a two-column split view. On iPhone this collapses to a single navigation stack
 /// automatically.
 ///
@@ -10,7 +24,7 @@ import SwiftUI
 struct MainWorkspaceView: View {
   @EnvironmentObject private var state: SharedStateBridge
   @State private var showingSettings = false
-  @State private var showingComposePreview = false
+  @State private var showingComposePreview = LaunchOptions.opensComposePreview
   @State private var columnVisibility: NavigationSplitViewVisibility = .doubleColumn
 
   var body: some View {
