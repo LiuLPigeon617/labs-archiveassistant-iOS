@@ -328,26 +328,53 @@ Two of the three TTFs moved into `commonMain/composeResources/font` (+12.9 MB):
 the three is a subset — they are full CJK faces, so the size is glyph count, not a packaging mistake.
 Subsetting is the lever if the bundle size matters later.
 
-**But bundling them changed nothing yet**, and the reason is worth stating plainly: nothing calls
-`archiveFontFamily`, and nothing calls `ProvideImperialFonts`. `LocalImperialFonts` still holds its
-default:
+**Bundling them changed nothing by itself**, and the reason was worth stating plainly: nothing called
+`archiveFontFamily`, and nothing called `ProvideImperialFonts`. `LocalImperialFonts` held its default:
 
 ```kotlin
 staticCompositionLocalOf { ImperialFonts(title = FontFamily.Serif, display = FontFamily.Serif) }
 ```
 
-So the imperial typography has never been installed on **any** platform, including Android — every
-pane has been rendering in the platform serif fallback while the fonts sat unused. Installing
-`ProvideImperialFonts(fonts)` at the root is the missing half of "fonts look right on iOS", and the
-root is exactly what does not exist yet: it belongs to remaining work #5, the real Compose entry
-point. Do not treat the font migration as visually complete until that lands.
+So the imperial typography had never been installed on **any** platform, including Android — every
+pane rendered in the platform serif fallback while the fonts sat unused.
+
+**Resolved** by the Compose root added in `be21549`: `ArchiveAssistantRoot` now installs
+`ProvideImperialFonts` with both faces, so this is the first composition root that gives them a
+chance to render. What it does *not* fix is the Material theme gap (below), so settings chrome is
+still baseline-coloured.
 
 Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
 private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
 
+One API constraint to remember when editing that root: `archiveFontFamily` is `@Composable` (the
+Compose resource API loads the face through composition), so resolving the faces inside
+`remember { … }` fails to compile — `@Composable invocations can only happen from the context of a
+@Composable function`. Keep the calls inline in the composable body.
+
 Material Icons are deliberately **not** a dependency of `:shared`; the iOS chrome uses SF Symbols.
 Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locally (see
 `CloseSearchGlyph` in HomePane).
+
+### `:shared` has no MaterialTheme, so the palette does not apply
+
+A gap surfaced while building the root, and it is not fixable by the root itself. Grepping the module
+for `MaterialTheme(` / `colorScheme =` / `lightColorScheme` returns **nothing**: the only
+`ArchiveAssistantTheme` lives in `:app` at `app/src/main/java/com/lyihub/archiveassistant/ui/theme/Theme.kt:62`.
+Consequently every `MaterialTheme.colorScheme.*` read in shared UI resolves to the Material 3
+**baseline** scheme:
+
+| Call site | Reads |
+|---|---|
+| `shared/.../ui/screens/SettingsPane.kt:349,364,403,534,545,587,588` | `.primary`, `.error`, `.onSurfaceVariant` |
+| `shared/.../ui/components/PaneContainer.kt:33` | `.outlineVariant` |
+
+So `SettingsPane` currently renders with the default purple accent, not `ImperialCinnabar`. The
+imperial colours that *do* apply are the ones referenced directly as literals
+(`shared/.../ui/theme/ImperialPalette.kt`: `ImperialParchment` 0xFFE6D7BE, `ImperialBronze`
+0xFFD1A36B, `ImperialLightGold` 0xFFEDD8AA, `ImperialIvory` 0xFFFCFBF6, `ImperialUmber` 0xFF8B654A,
+`ImperialCinnabar` 0xFFE65D3F). Porting `ArchiveAssistantTheme` into `commonMain` — a
+`lightColorScheme` mapped onto those literals, no dark variant yet — is its own change and is the
+next thing to do before any pane can be called visually migrated.
 
 ## Remaining work
 
@@ -363,16 +390,14 @@ Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locall
 4. Finish the artwork move. **All 12 assets referenced by the migrated shared UI are bundled**, and
    the two referenced calligraphic TTFs are too (12.9 MB; `ma_shan_zheng_regular` deliberately left
    behind, unreferenced). What remains is art referenced *only* by screens that have not been
-   migrated yet. Read the size finding below before copying any of it, and note that the fonts have
-   no effect until #5 installs `ProvideImperialFonts`.
-5. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
-   point, and wire it to `ArchiveAssistantStateStore`. That root must also call
-   `ProvideImperialFonts(ImperialFonts(title = archiveFontFamily("san_ji_xing_kai_jian_ti_cu")
-   ?: FontFamily.Serif, display = archiveFontFamily("dinglie_song_typeface") ?: FontFamily.Serif))`
-   — without it the bundled TTFs never reach a composable.
-6. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
-7. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
-8. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
+   migrated yet. Read the size finding below before copying any of it.
+5. ~~Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
+   point …~~ **Done in `be21549`** — see "The Compose root exists now" below.
+6. Port `ArchiveAssistantTheme` into `commonMain` so `MaterialTheme.colorScheme` stops resolving to
+   the Material 3 baseline. Required before any pane looks migrated.
+7. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
+8. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
+9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 9. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
 
 ### Artwork size: the remainder is not a free move
@@ -410,6 +435,66 @@ how it is drawn; let the memorial covers arrive with the memorial-reader refacto
   extend that interface rather than add a second storage path.
 - The plan's `multiplatform-settings` row in "Library swaps" is still *planned*, not done:
   no shared code calls it yet.
+
+### The Compose root exists now, and what it deliberately is not
+
+Added in `be21549`. The module previously had no composition root at all — the only one was
+`ArchiveAssistantApp` in the Android `:app` module — so nothing in `:shared` was ever rendered.
+
+`shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/ArchiveAssistantRoot.kt`:
+
+```kotlin
+@Composable
+fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { defaultStateStore() })
+```
+
+It installs `ProvideImperialFonts` around the content, reads `stateStore.state`, and dispatches:
+`AppPane.SETTINGS` → `SettingsPane` (the only fully migrated screen); anything else →
+`NotYetMigratedPane`, which says so in words rather than drawing an empty box that would be
+indistinguishable from a layout bug.
+
+The store needs no dependency injection to run: `ArchiveAssistantStateStore`'s constructor is
+platform-free (every parameter has a default and the defaults seed the built-in sample data). Note the
+Android root passes `androidContext`, `AppDataRepository`, `AiEngineSettingsRepository`,
+`OkHttpModelDownloadManager` and `LocalInferenceConnection`; the two repositories are what would
+persist data, and #6/#7 above are what supply the rest.
+
+`shared/src/iosMain/kotlin/com/lyihub/archiveassistant/ui/ArchiveRootViewController.kt` is the
+Swift-facing factory:
+
+```kotlin
+object IosComposeRoot {
+  fun makeViewController(): UIViewController =
+    createArchiveRootViewController(
+      ArchiveAssistantStateStore(
+        initialState = ArchiveAssistantState(selectedPane = AppPane.SETTINGS)
+      )
+    )
+}
+```
+
+It opens on `AppPane.SETTINGS` rather than the store default `AppPane.TOPICS` on purpose: starting on
+`TOPICS` lands the preview on the "not yet migrated" message and verifies nothing, and this entry point
+exists to prove the resource and font pipeline renders on iOS. Two Kotlin/Native traps are worth
+remembering: a top-level Kotlin function exports under a file-facade name (hence the object for
+anything Swift calls), and `ComposeUIViewController` reports no reliable intrinsic content size, so the
+Swift side must pin it with explicit constraints.
+
+On the Swift side:
+- `iosApp/iosApp/ComposeHostingViewController.swift` — `ArchiveComposeHostingViewController` replaced
+  the placeholder. It forwards `supportedInterfaceOrientations` and `shouldAutorotate` to the child,
+  because a container that inherited the portrait-only default would silently break iPad landscape.
+- `iosApp/iosApp/ContentView.swift` — now `ComposeRootPreviewView`, a `NavigationStack` hosting the
+  representable above. This is a **staging surface, not a product screen**, and it is intentionally
+  where the Compose tree is mounted.
+- `iosApp/iosApp/MainWorkspaceView.swift` — the two columns are now `UnmigratedPanePlaceholder`s and
+  no longer host Compose. Reason: mounting the root in a pane would have to choose between putting a
+  settings screen in the entry-detail column (a UI that lies about itself) or overturning the
+  deliberately-native SwiftUI settings page. Instead a toolbar button opens the Compose root as a
+  full-screen cover, which lies about nothing and can be deleted in one piece as panes land.
+
+`onChooseModelFile = {}` is left inert on purpose: choosing a model file needs a native file picker
+that does not exist yet, and a callback that pretends to work is worse than one that is visibly absent.
 
 ### Visual verification of the diagrams (how to reproduce)
 
