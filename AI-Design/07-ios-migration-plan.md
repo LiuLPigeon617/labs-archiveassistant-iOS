@@ -144,6 +144,10 @@ only iOS verification the Compose root has: it compiles `iosArm64` and archives 
 both `ArchiveRootViewController.kt` and the Swift changes. Before `10a44a8` the workflow had **never**
 passed.
 
+The workflow now has a **second job**, `Simulator smoke (screenshots)`, which runs in parallel and does
+not gate the IPA. It exists because a green archive build proved nothing about what the app draws; see
+the section below. Note that the parallel job roughly doubles the runner time of the workflow.
+
 Artifacts from that run: `JuHeShiYi-unsigned-ipa-Release` **14,170,223 B (~13.5 MB)**,
 `xcodebuild-log` 13,547 B, `shared-test-results` 6,402 B. The IPA contains
 `Payload/聚合拾遗.app/` with the executable, `Assets.car`, app icons and `Info.plist`.
@@ -165,6 +169,96 @@ costs, and it was always going to arrive with the first caller.
 Unlike the JPEGs, the TTFs are already internally compressed, so zip gains almost nothing on them:
 re-encoding art will not recover this. If bundle size becomes a release concern, subsetting the two
 faces is the lever (see the font section).
+
+### The simulator smoke test: closing the "verified by compile only" gap
+
+Everything above proves the app **builds** for iOS. None of it proves anything about what the app
+**draws** — and until this job existed, the shared Compose UI, the calligraphic fonts and the imperial
+palette had only ever been verified by a green compile. A compile cannot tell you whether
+`archiveFontFamily` returned the real face or fell back to `FontFamily.Serif`, nor whether
+`ArchiveAssistantTheme` applied the palette at all.
+
+`.github/workflows/ios-build.yml` now has a second job, `Simulator smoke (screenshots)`, which runs
+**in parallel** with the IPA job (no `needs:`, so one failing does not mask the other). It builds the
+app for the simulator, installs it, launches it three times, and screenshots each launch — all driven
+by `.github/scripts/simulator-smoke.sh`.
+
+Three screenshots, because they answer different questions:
+
+| Screenshot | Launch | Question it answers |
+|---|---|---|
+| `01-native-shell-light.png` | no argument | does the SwiftUI shell render at all (the baseline) |
+| `02-compose-settings-light.png` | `--compose-preview` | does the shared Compose tree render, and do the bundled fonts show |
+| `03-compose-settings-dark.png` | `--compose-preview`, dark appearance | did `isSystemInDarkTheme()` resolve to the dark scheme at first composition |
+
+All three upload in the `ios-simulator-smoke` artifact. That artifact is the point: it answers the
+font question by *showing* it, which is the only way that question can be answered.
+
+**Two deliberate build choices.** The simulator build runs `-sdk iphonesimulator -configuration Debug`
+with `ARCHS=arm64` and **without** the signing overrides the archive build needs — the simulator SDK
+expects an ad-hoc signature and `simctl install` accepts the default product, so
+`CODE_SIGNING_ALLOWED=NO` would only risk producing a bundle the simulator refuses. And the dark
+screenshot relaunches under a switched appearance rather than toggling it under a running app, because
+that is what exercises the value `isSystemInDarkTheme()` resolves at *first* composition.
+
+**The `--compose-preview` launch argument.** `simctl launch` can pass arguments but cannot tap the
+toolbar button that opens `ComposeRootPreviewView`, and driving the UI instead would mean adding a UI
+automation target to the Xcode project. So `MainWorkspaceView.swift` reads
+`ProcessInfo.processInfo.arguments` and starts with the preview already presented. It changes only
+where the app *starts*, not what it renders. The manual equivalent, useful locally on a Mac:
+
+```bash
+xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
+```
+
+**What the pixel check does and does not prove.** `.github/scripts/check-screenshot.swift` decodes each
+PNG, quantises colours to 5 bits per channel and fails if fewer than 50 distinct colours appear. That
+catches exactly one thing: a blank, flat or unmounted screen. It **cannot** tell a correct layout from
+a broken one, and will happily pass a screen that is wrong in every other way. Read the images; the
+check exists so that an empty screen fails the build instead of being uploaded and quietly ignored.
+
+**The trap this job is built around.** A failed launch leaves the screenshot showing the simulator
+home screen — colourful, full of icons, and passing every pixel check. So the script never trusts a
+screenshot on its own. Per phase it: asserts the app is actually running (`assert_alive`, polling
+`simctl spawn ... launchctl list`), captures, stops, and then fails on any `.ips` crash report newer
+than the run marker, printing the console log tail so the cause is visible in the CI log instead of
+only inside the artifact. The first version of the liveness check also accepted a `bundle: <pid>` line
+from the launch output; that signal was dropped because `simctl` prints it when the launch is
+*requested*, not while the process is alive, so it waved through an app that had already crashed.
+
+**First real find (run 37203635522): the app died on launch, and the screenshots were the home screen.**
+Both Compose launches aborted about two seconds in. The `.ips` report said only `EXC_CRASH` /
+`SIGABRT` with an empty `exceptionReason`; the actual message was in the launch console:
+
+```
+Uncaught Kotlin exception: kotlin.IllegalStateException: Error: `Info.plist` doesn't have a valid `CADisableMinimumFrameDurationOnPhone` entry, or has it set to `false`.
+This will result in an inadequate performance on iPhones with high refresh rate.
+Add `<key>CADisableMinimumFrameDurationOnPhone</key><true/>` entry to the `Info.plist` file to fix this error.
+To disable this check, set `ComposeUIViewController(configure = { enforceStrictPlistSanityCheck = false }) { .. }`.
+```
+
+with `kfun:androidx.compose.ui.uikit.PlistSanityCheck.PlistSanityCheck$performIfNeeded$1.invoke#internal`
+on the faulting thread. Compose Multiplatform 1.8.0 (`gradle/libs.versions.toml:23`) enforces this from
+`PlistSanityCheck.uikit.kt`, and the check fires from a dispatch block at process start rather than from
+the hosted controller — so the plain SwiftUI shell launch was unaffected, while every launch that
+reached Compose died.
+
+Two things follow, and both generalise:
+
+- The fix belongs in `iosApp/iosApp/Info.plist`, not in code. The entry is a real requirement: without
+  it iOS caps the app at 60 Hz on ProMotion iPhones, so `enforceStrictPlistSanityCheck = false` would
+  silence the crash *and* keep the performance loss. The key is now in the plist; if it ever disappears,
+  this job fails.
+- The screenshots that were captured were the springboard. `02-compose-settings-light.png` is 3.58 MB of
+  wallpaper and app icons — a large, colourful image that `check-screenshot.swift` accepts without
+  complaint. That is precisely why crash detection, not the pixel check, is what makes this artifact
+  trustworthy: the pixel check proves a screen is not blank and nothing more, and a crashed app is not
+  blank.
+
+**Not covered yet:** iPad, landscape, and any interaction past first presentation. The workflow builds
+for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only, so the iPad layout
+— the reason `NavigationSplitView` and the orientation forwarding in the hosting controller exist — is
+still unverified. A screenshot of the settings pane is also not a test that the settings *work*.
 
 ### Kotlin/Swift interop notes
 
@@ -449,6 +543,10 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 8. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 10. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
+11. Widen the simulator smoke test beyond one iPhone portrait runtime: boot an iPad runtime and
+    capture landscape too. The project builds for `TARGETED_DEVICE_FAMILY = "1,2"` and the hosting
+    controller forwards orientation changes, so the two-column layout is exactly the thing the current
+    coverage cannot see. Cheap to add — the script already parameterises the device and appearance.
 
 ### Artwork size: the remainder is not a free move
 
@@ -609,4 +707,14 @@ from the 1440x900 screenshot.
 - **A `git push` that succeeds still exits non-zero under PowerShell**, because git writes progress
   to stderr and PowerShell turns native stderr into a `NativeCommandError`. Check the
   `old..new  branch -> branch` line instead of trusting the exit code.
+- **`xcrun simctl list devices` pads every device line with a trailing space**, so a `sed` pattern
+  anchored on `)$` silently matches nothing and the script reports "no simulator found" while the
+  listing above it looks perfect. Anchor on `[[:space:]]*$`, and prefer an explicit parse-failure
+  message over a generic one — the generic one sent the search in the wrong direction. The same
+  listing groups runtimes oldest-first, so "the last match" is the newest runtime, which is the
+  intended choice and worth stating rather than leaving implicit.
+- **Print the raw input a parser is about to consume, in full.** The trailing spaces above are visible
+  in the job log, but only because the listing was dumped before the parse ran — that dump is what
+  turned "the parse produced nothing" into a two-minute diagnosis instead of a guess. A `head`-ed dump
+  would have hidden the newest runtime's lines and made the same bug look like a environment problem.
 

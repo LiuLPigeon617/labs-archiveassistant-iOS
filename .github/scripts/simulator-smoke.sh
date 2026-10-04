@@ -92,6 +92,52 @@ MARKER="$ARTIFACT_DIR/.smoke-start"
 touch "$MARKER"
 
 # ---------------------------------------------------------------------------------------------------
+# Crash reports
+# ---------------------------------------------------------------------------------------------------
+#
+# A crashing launch is invisible in a screenshot: what gets captured is whatever the simulator fell back
+# to, which is colourful and passes the pixel check. So crashes are checked after every phase, and the
+# failure names the phase that crashed.
+CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
+: > "$ARTIFACT_DIR/crashes.txt"
+
+check_no_crash() {
+  local what="$1"
+  local console_log="$2"
+  local found=0
+
+  if [ -d "$CRASH_DIR" ]; then
+    while IFS= read -r report; do
+      grep -q "$BUNDLE_ID" "$report" 2>/dev/null || continue
+      found=1
+      echo "$report" >> "$ARTIFACT_DIR/crashes.txt"
+      cp "$report" "$ARTIFACT_DIR/" 2>/dev/null || true
+    done < <(find "$CRASH_DIR" -type f -name '*.ips' -newer "$MARKER" 2>/dev/null)
+  fi
+
+  [ "$found" -eq 1 ] || return 0
+
+  # The .ips body is one enormous JSON line, so pulling the identifying fields beats printing it whole
+  # and beats needing the artifact to know what happened. For a Kotlin exception those fields are mostly
+  # empty (the report records a SIGABRT and nothing else), which is why the console log tail below
+  # matters more: that is where `Uncaught Kotlin exception: ...` and its message actually appear.
+  while IFS= read -r report; do
+    echo "--- $report ---"
+    grep -oE '"(exception|termination|asi|isCorpse|faultingThread)"[^,]{0,300}' "$report" 2>/dev/null | head -n 12 || true
+    grep -oE '"(type|signal|code|subtype|reason|namespace|indicator|description)":("[^"]*"|[0-9]+)' "$report" 2>/dev/null | head -n 24 || true
+    echo
+  done < "$ARTIFACT_DIR/crashes.txt"
+
+  if [ -f "$console_log" ]; then
+    echo "--- console log tail: $console_log ---"
+    tail -n 40 "$console_log" || true
+    echo
+  fi
+
+  die "$what: the app produced a crash report during this phase. The report and its summary are in $ARTIFACT_DIR (crashes.txt plus the .ips files)."
+}
+
+# ---------------------------------------------------------------------------------------------------
 # Launch, screenshot, repeat
 # ---------------------------------------------------------------------------------------------------
 #
@@ -159,6 +205,23 @@ assert_running() {
   die "$what: the app did not start within 25s; screenshots would have shown the home screen."
 }
 
+# The pid line simctl prints proves the launch was *attempted*, not that the app survived it, so the
+# check before a screenshot trusts only the launchd job list. Without this, an app that starts and then
+# crashes is screenshotted as the springboard - colourful, and passing every pixel check.
+assert_alive() {
+  local what="$1"
+  local console_log="$2"
+  if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+    echo "$what: still running before capture."
+    return 0
+  fi
+  echo "::error::$what: the app is no longer running, so the screenshot would not have shown it."
+  xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i archive || echo "(no launchd job)"
+  echo "=== recent console output ==="
+  tail -n 40 "$console_log" 2>/dev/null || true
+  exit 1
+}
+
 # Compose loads its fonts and resource pack on first composition, so the first frames are empty. The
 # sleeps are generous on purpose: a too-early screenshot would look like a rendering bug.
 COMPOSE_SETTLE_SECONDS=15
@@ -169,15 +232,19 @@ xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
 start_app "$ARTIFACT_DIR/console-native-shell.log"
 assert_running "native shell" "$ARTIFACT_DIR/console-native-shell.log"
 sleep "$NATIVE_SETTLE_SECONDS"
+assert_alive "native shell" "$ARTIFACT_DIR/console-native-shell.log"
 shot 01-native-shell-light.png
 stop_app
+check_no_crash "native shell phase" "$ARTIFACT_DIR/console-native-shell.log"
 
 log "2/3 Compose tree, light appearance"
 start_app "$ARTIFACT_DIR/console-compose-light.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
 sleep "$COMPOSE_SETTLE_SECONDS"
+assert_alive "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
 shot 02-compose-settings-light.png
 stop_app
+check_no_crash "Compose light phase" "$ARTIFACT_DIR/console-compose-light.log"
 
 # Relaunch rather than toggling appearance under a running app: this exercises the value
 # `isSystemInDarkTheme()` resolves at first composition, which is what the theme reads.
@@ -186,8 +253,10 @@ xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
 start_app "$ARTIFACT_DIR/console-compose-dark.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
 sleep "$COMPOSE_SETTLE_SECONDS"
+assert_alive "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
 shot 03-compose-settings-dark.png
 stop_app
+check_no_crash "Compose dark phase" "$ARTIFACT_DIR/console-compose-dark.log"
 
 # ---------------------------------------------------------------------------------------------------
 # App log and crash reports
@@ -198,23 +267,7 @@ xcrun simctl spawn "$UDID" log show --last 3m --style compact \
   --predicate "process == \"$PRODUCT_NAME\"" > "$ARTIFACT_DIR/app-log.txt" 2>&1 || true
 wc -l < "$ARTIFACT_DIR/app-log.txt" | tr -d ' ' | sed 's/$/ lines captured/'
 
-CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
-: > "$ARTIFACT_DIR/crashes.txt"
-if [ -d "$CRASH_DIR" ]; then
-  while IFS= read -r report; do
-    if grep -q "$BUNDLE_ID" "$report" 2>/dev/null; then
-      echo "$report" >> "$ARTIFACT_DIR/crashes.txt"
-      cp "$report" "$ARTIFACT_DIR/" 2>/dev/null || true
-    fi
-  done < <(find "$CRASH_DIR" -type f -name '*.ips' -newer "$MARKER" 2>/dev/null)
-fi
-
-if [ -s "$ARTIFACT_DIR/crashes.txt" ]; then
-  log "crash reports"
-  cat "$ARTIFACT_DIR/crashes.txt"
-  die "the app produced crash reports during the smoke run (copied into $ARTIFACT_DIR)."
-fi
-echo "no crash reports for $BUNDLE_ID."
+echo "no crash reports for $BUNDLE_ID in any phase."
 
 # ---------------------------------------------------------------------------------------------------
 # Blank-screen check

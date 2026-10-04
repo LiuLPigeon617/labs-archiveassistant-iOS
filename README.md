@@ -28,13 +28,14 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - iOS 宿主工程：`iosApp/` 提供 SwiftUI 外壳、原生设置页、状态桥接与平台引导代码；持续集成在 macOS 上构建未签名 IPA。
 - Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效）并从 `ArchiveAssistantStateStore` 读取状态分发到已迁移的设置页；iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂，经 `ArchiveComposeHostingViewController` 承载。
 - 主题已迁入共享内核：`ArchiveAssistantTheme` 现位于 `shared/src/commonMain/.../ui/theme/Theme.kt`，把 `MaterialTheme.colorScheme` 映射到皇家配色，并移植了完整 13 级字阶；浅色与深色两套配色都保留，`SettingsPane` 等界面不再回落到默认紫色强调色。
+- iOS 侧有截图级验证：持续集成新增 `Simulator smoke (screenshots)` 作业，在 macOS runner 上构建模拟器版本并真正启动，分别截取原生外壳、共享 Compose 界面（浅色）与共享 Compose 界面（深色）三张截图，连同 App 日志与崩溃报告一起作为构建产物上传。字体与配色是否真的渲染出来，由这三张图回答，而不再只能靠「编译通过」推断。
 
 ## 尚未完成与已知问题
 
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是首页与详情页都还没迁入共享内核，此时挂载只能把设置页放进「条目详情」的位置。
 - 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与首页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。
-- iOS 无法在本机构建验证：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，因此共享内核的 iOS 产物没有本机验证记录；iOS 编译与 Swift 侧代码目前由持续集成验证（最近一次全绿）。
+- iOS 无法在本机构建验证，且截图覆盖不完整：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，iOS 编译、Swift 侧代码与界面渲染目前全部由持续集成验证。截图冒烟测试只在 iPhone 运行时上运行，iPad、横屏以及首次呈现之后的任何交互都不在覆盖范围内；其像素检查也只能发现「画面空白或纯色」，无法判断布局是否正确，因此仍需人工看图。
 - JVM 目标命名容易踩坑：本分支的 JVM 目标名为 `desktop`（`shared/build.gradle.kts` 中为 `jvm("desktop")`），对应的任务是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`；引用错的名称会让构建在任务解析阶段直接失败。
 - 本地模型文件选择尚未接通：设置页的「选择模型文件」按钮已绘出，但在 Compose 根组件中被刻意置空，因为还缺少原生文件选择器；点击不会有任何反应。
 - AI 三省六部推荐尚未实现：当前项目有 AI 归纳与分类提示词基础，但还没有完成面向“三省六部”体系的自动推荐、排序或决策流。不要把现有智能归纳视为完整推荐系统。
@@ -123,6 +124,16 @@ iOS（仅构建 iOS 产物时需要）：
 
 iOS 产物由 `.github/workflows/ios-build.yml` 在 macOS runner 上构建，产出未签名的 IPA 作为构建产物；也可以在装有 Xcode 的 macOS 上打开 `iosApp/iosApp.xcodeproj` 构建。
 
+该工作流包含两个并行作业：`Build unsigned IPA` 产出未签名 IPA，`Simulator smoke (screenshots)` 构建模拟器版本、安装到模拟器并实际启动截图。截图作业由 `.github/scripts/simulator-smoke.sh` 驱动，会用 `.github/scripts/check-screenshot.swift` 检查每张图是否「确实画了东西」——它只能发现空白或纯色画面，不能判断布局对错，所以产物里的截图本身才是要看的东西。在装有 Xcode 的 macOS 上可以手工复现同一路径：
+
+```bash
+xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
+```
+
+`--compose-preview` 会让 App 启动时直接进入共享 Compose 预览界面；`simctl` 可以传启动参数但点不了工具栏按钮，因此这条参数只为截图而存在，它改变的是启动位置而非渲染内容。
+
+**`iosApp/iosApp/Info.plist` 里的 `CADisableMinimumFrameDurationOnPhone` 不能删。** Compose Multiplatform 在进程启动时会校验这一项，缺失或为 `false` 就抛 `IllegalStateException` 并让 App 直接崩溃——而且它是在 SwiftUI 外壳启动之后才生效，所以「外壳正常」并不代表共享界面没问题。它也不是纯粹的仪式：没有这一项，iOS 会在 ProMotion 机型上把 App 限制在 60 Hz。这个坑是截图冒烟测试第一次运行时抓到的，详见 `AI-Design/07-ios-migration-plan.md` 的模拟器冒烟测试一节。
+
 最近一次验证过的构建（提交 `135d2f2`，运行 37199938026）全绿：工作流全部步骤通过，产出的未签名 IPA 为 14,170,223 字节，共享内核的单测报告与 `xcodebuild` 日志一并作为构建产物上传。主题移植提交 `f402b86` 只改 `commonMain`（新增 `Theme.kt`、调整根组件），本地以 `desktop` 目标验证通过。
 
 体积变化值得注意：前一次全绿构建（`10a44a8`）的 IPA 为 5,650,070 字节，接入 Compose 根组件后升到 14,170,223 字节，差额基本就是两个书法字体。字体此前虽已入包，但没有任何代码引用，因此在 iOS 产物里被当作未使用资源而未被打进 App；根组件开始调用 `archiveFontFamily` 后它们才真正随包发布。TTF 本身已内部压缩，重新编码图片无法回收这部分体积，唯一有效的杠杆是按需子集化字体。
@@ -151,7 +162,7 @@ iosApp/
 
 AI-Design/           设计与迁移文档，含分阶段迁移计划与架构图
 docs/                迁移相关的生成文档
-.github/workflows/   持续性集成，包含 iOS 未签名 IPA 构建
+.github/             持续性集成：iOS 未签名 IPA 构建、模拟器截图冒烟测试，以及配套脚本
 ```
 
 ## 开发重点
