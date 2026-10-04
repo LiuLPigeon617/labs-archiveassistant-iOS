@@ -76,10 +76,13 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Verify shared kernel (JVM target)
+      - name: Verify shared kernel (desktop target)
         run: |
-          echo "=== verifying shared kernel on jvm target ==="
-          ./gradlew :shared:compileKotlinJvm :shared:jvmTest --stacktrace
+          # The JVM target is named `desktop` in shared/build.gradle.kts
+          # (jvm("desktop")), so the tasks are compileKotlinDesktop /
+          # desktopTest. compileKotlinJvm and jvmTest do not exist.
+          echo "=== verifying shared kernel on desktop target ==="
+          ./gradlew :shared:compileKotlinDesktop :shared:desktopTest --stacktrace
 
       - name: Build and stage SharedKit.xcframework
         run: |
