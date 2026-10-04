@@ -265,13 +265,14 @@ Notes worth keeping:
 |---|---|---|
 | `archivePainter(name): Painter?` | commonMain: `painterResource(Res.drawable.*)` | same code on every target |
 | `archivePainterOrPlaceholder(name): Painter` | same, falling back to a transparent painter | transparent painter of the requested size |
-| `archiveFontFamily(name): FontFamily?` | `res/font` via `getIdentifier` | null; theme falls back to `FontFamily.Serif` |
+| `archiveFontFamily(name): FontFamily?` | commonMain: `FontFamily(Font(Res.font.*))` | same code on every target |
 
-`archivePainter` is **no longer expect/actual**. It is one `commonMain` function that resolves names
-through the Compose Multiplatform resource pack in `src/commonMain/composeResources/drawable`, so the
-same art reaches every target. The three per-platform `ArchivePainter.<target>.kt` files are deleted;
-the Android actual's `getIdentifier` path could never have worked anyway, because `:shared` cannot see
-`:app`'s `res/drawable` namespace.
+`archivePainter` and `archiveFontFamily` are **no longer expect/actual**. Each is one `commonMain`
+function resolving names through the Compose Multiplatform resource pack in
+`src/commonMain/composeResources/{drawable,font}`, so the same art and type reach every target. The
+per-platform `ArchivePainter.<target>.kt` and `ArchiveFont.<target>.kt` files are deleted; the Android
+paint actual's `getIdentifier` path could never have worked anyway, because `:shared` cannot see
+`:app`'s resource namespace.
 
 `bundledDrawable(name)` in `archivePainter`'s file is the single source of truth for which names
 resolve. Adding an asset is a two-step change: copy the file into `composeResources/drawable`, then
@@ -283,6 +284,33 @@ outstanding, and both are in: `home_search_tile` (SettingsPane) and `memorial_xu
 5400x3600 (13.5 MB) to 1620x1080 (464 KB, ~3.4%) — it is drawn `ContentScale.Crop` as a paper texture
 under a panel, so the original resolution was ~3.3x beyond what any iPad renders, and 1620 px keeps a
 30% linear sample of the source. If it ever looks soft on a large display, 2160x1440 costs 864 KB.
+
+### The calligraphic fonts are bundled but still unused — and that exposes a bigger gap
+
+Two of the three TTFs moved into `commonMain/composeResources/font` (+12.9 MB):
+
+| Font | Glyphs | Used by |
+|---|---|---|
+| `san_ji_xing_kai_jian_ti_cu.ttf` | 4,864 | `ImperialTitleFont` in `:app`'s Type.kt |
+| `dinglie_song_typeface.ttf` | 2,816 | `ImperialDisplayFont` in `:app`'s Type.kt |
+
+`ma_shan_zheng_regular.ttf` (3,584 glyphs, 5.6 MB) was **not** copied: no code references it. None of
+the three is a subset — they are full CJK faces, so the size is glyph count, not a packaging mistake.
+Subsetting is the lever if the bundle size matters later.
+
+**But bundling them changed nothing yet**, and the reason is worth stating plainly: nothing calls
+`archiveFontFamily`, and nothing calls `ProvideImperialFonts`. `LocalImperialFonts` still holds its
+default:
+
+```kotlin
+staticCompositionLocalOf { ImperialFonts(title = FontFamily.Serif, display = FontFamily.Serif) }
+```
+
+So the imperial typography has never been installed on **any** platform, including Android — every
+pane has been rendering in the platform serif fallback while the fonts sat unused. Installing
+`ProvideImperialFonts(fonts)` at the root is the missing half of "fonts look right on iOS", and the
+root is exactly what does not exist yet: it belongs to remaining work #5, the real Compose entry
+point. Do not treat the font migration as visually complete until that lands.
 
 Fonts reach composables through `LocalImperialFonts` (a CompositionLocal) rather than parameters, so
 private helpers do not each need a font argument. `ProvideImperialFonts` installs them.
@@ -302,12 +330,16 @@ Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locall
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a
    pure `AndroidView` wrapper around `MemorialFoldView`.
-4. Finish the artwork move. **All 12 assets referenced by the migrated shared UI are bundled** (see
-   the seams table above). What remains is art referenced *only* by screens that have not been
-   migrated yet, plus the three calligraphic TTFs, which still resolve to `null`. Read the size
-   finding below before copying any of it.
+4. Finish the artwork move. **All 12 assets referenced by the migrated shared UI are bundled**, and
+   the two referenced calligraphic TTFs are too (12.9 MB; `ma_shan_zheng_regular` deliberately left
+   behind, unreferenced). What remains is art referenced *only* by screens that have not been
+   migrated yet. Read the size finding below before copying any of it, and note that the fonts have
+   no effect until #5 installs `ProvideImperialFonts`.
 5. Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
-   point, and wire it to `ArchiveAssistantStateStore`.
+   point, and wire it to `ArchiveAssistantStateStore`. That root must also call
+   `ProvideImperialFonts(ImperialFonts(title = archiveFontFamily("san_ji_xing_kai_jian_ti_cu")
+   ?: FontFamily.Serif, display = archiveFontFamily("dinglie_song_typeface") ?: FontFamily.Serif))`
+   — without it the bundled TTFs never reach a composable.
 6. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
 7. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 8. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
