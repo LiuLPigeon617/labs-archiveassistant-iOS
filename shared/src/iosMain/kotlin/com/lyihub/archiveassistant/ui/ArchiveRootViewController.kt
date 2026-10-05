@@ -21,23 +21,23 @@ import platform.UIKit.UIViewController
  *  - `ComposeUIViewController` does not report a reliable intrinsic content size, so the hosted view
  *    must be pinned with explicit constraints by the caller (see `ComposeHostingViewController.swift`).
  *
- * No system-appearance plumbing is done here on purpose: the imperial palette has no dark variant
- * yet (see the theme gap noted on `ArchiveAssistantRoot`), so reacting to light/dark before that
- * theme exists would only re-render the same colours.
+ * No system-appearance plumbing is done here on purpose: the imperial palette is resolved inside the
+ * Compose tree by `ArchiveAssistantTheme` (which does read `isSystemInDarkTheme()`), so the host has
+ * nothing to configure — toggling the simulator appearance and relaunching is enough.
  */
 object IosComposeRoot {
   /**
    * The store the preview root renders.
    *
-   * Opened on [AppPane.SETTINGS] rather than the store's default [AppPane.TOPICS], because settings
-   * is the only pane migrated into `:shared`. Starting on `TOPICS` would land the preview on the
-   * "not yet migrated" message, which verifies nothing — and this entry point exists to verify that
-   * the Compose resource pipeline and the imperial fonts actually render on iOS.
+   * Starts on [AppPane.TOPICS], which is also the store's own default — it is spelled out here so the
+   * entry point does not silently follow a future change to that default. `TOPICS` renders the
+   * dashboard, the app's main screen; the preview used to open on settings only because settings was
+   * the sole migrated pane.
    */
   fun makeViewController(): UIViewController =
     createArchiveRootViewController(
       ArchiveAssistantStateStore(
-        initialState = ArchiveAssistantState(selectedPane = AppPane.SETTINGS)
+        initialState = ArchiveAssistantState(selectedPane = AppPane.TOPICS)
       )
     )
 }

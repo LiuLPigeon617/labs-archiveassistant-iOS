@@ -21,6 +21,17 @@ internal data class ArchiveTileVisual(
 )
 
 internal const val ArchiveCutCornerNotchDp = 8
+
+/**
+ * How many memorials the home screen advertises as awaiting review.
+ *
+ * Ported from `app/src/main/java/com/lyihub/archiveassistant/ui/screens/MemorialDemoModels.kt:87`,
+ * where it sat next to the Android-only colour constants. It lives here because this file is already
+ * the home of the shared panes' sample data ([SampleTopicIds], [SampleTopicTitles]) and
+ * [TOTAL_PENDING_MEMORIALS] is the same kind of fixture: the memorial demo has no real backlog yet,
+ * so the count is a constant rather than derived from state.
+ */
+internal const val TOTAL_PENDING_MEMORIALS = 6
 internal val ArchiveCutCornerShape: Shape = FixedCutCornerShape(ArchiveCutCornerNotchDp)
 internal val ArchiveFlatCutShape: Shape = FlatCutCornerShape(ArchiveCutCornerNotchDp)
 

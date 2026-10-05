@@ -191,8 +191,12 @@ Three screenshots, because they answer different questions:
 | Screenshot | Launch | Question it answers |
 |---|---|---|
 | `01-native-shell-light.png` | no argument | does the SwiftUI shell render at all (the baseline) |
-| `02-compose-settings-light.png` | `--compose-preview` | does the shared Compose tree render, and do the bundled fonts show |
-| `03-compose-settings-dark.png` | `--compose-preview`, dark appearance | did `isSystemInDarkTheme()` resolve to the dark scheme at first composition |
+| `02-compose-home-light.png` | `--compose-preview` | does the shared Compose tree render, and do the bundled fonts show |
+| `03-compose-home-dark.png` | `--compose-preview`, dark appearance | did `isSystemInDarkTheme()` resolve to the dark scheme at first composition |
+
+The last two were named `02/03-compose-settings-*.png` while settings was the only migrated pane. The
+artifacts of run 37214783385 keep those old names; the captures from the HomePane migration onward are
+named for the dashboard, because that is what the preview entry point now opens on.
 
 All three upload in the `ios-simulator-smoke` artifact. That artifact is the point: it answers the
 font question by *showing* it, which is the only way that question can be answered.
@@ -224,8 +228,8 @@ quantisation the script uses, on run 37203635522 (where every Compose launch cra
 |---|---|---|
 | genuinely blank screen | 1–3 | — |
 | native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
-| Compose settings, light | **167** | 37214783385 |
-| Compose settings, dark | **154** | 37214783385 |
+| Compose settings pane, light (the pane the preview opened on then) | **167** | 37214783385 |
+| Compose settings pane, dark (same) | **154** | 37214783385 |
 | springboard fallback after a crash | **2663 / 2822** | 37203635522 |
 
 The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
@@ -339,7 +343,8 @@ which is exactly what this section had to fix first.
 **Not covered yet:** iPad, landscape, and any interaction past first presentation. The workflow builds
 for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only, so the iPad layout
 — the reason `NavigationSplitView` and the orientation forwarding in the hosting controller exist — is
-still unverified. A screenshot of the settings pane is also not a test that the settings *work*.
+still unverified. A screenshot of a pane is also not a test that the pane *works*: the capture is the
+first frame, so tapping through the dashboard's tiles is still out of scope.
 
 ### Kotlin/Swift interop notes
 
@@ -416,12 +421,14 @@ iOS compile. Grepping `androidx\.compose\.ui\.res|LocalContext|^import android\.
 
 ### Remaining portable screens, and the strategy required
 
-Still in `:app`: `HomePane.kt` (1493 lines) and `MemorialBriefingPane.kt` (805).
+Still in `:app`: `MemorialBriefingPane.kt` (805 lines). `HomePane.kt` (1493 lines) was migrated this way
+and is now `shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/HomePane.kt`; see the
+HomePane section below for what the port touched.
 
-They were attempted and reverted, because they thread Android `R.drawable` **`Int` resource ids**
+Both were attempted earlier and reverted, because they thread Android `R.drawable` **`Int` resource ids**
 through many private helper composables. Converting them incrementally leaves the module
-uncompilable and produces half-converted files. `MemorialBriefingPane` is the smaller of the two and
-the better next target: 10 `painterResource` sites, one `List<Int>` cover list, two legacy fonts.
+uncompilable and produces half-converted files. `MemorialBriefingPane` is the better next target:
+10 `painterResource` sites, one `List<Int>` cover list, two legacy fonts.
 
 **Required strategy — do this as one atomic pass per file:**
 
@@ -466,7 +473,49 @@ materialization) before any conversion, so it is a work item of its own rather t
 pass.
 
 Net: **two** screens remain convertible, not four. That is a scope reduction of ~1500 lines against
-what this document previously implied.
+what this document previously implied. One of the two, `HomePane`, has since been migrated — see the
+HomePane section.
+
+### `HomePane` migrated (compiles green)
+
+`app/src/main/java/com/lyihub/archiveassistant/ui/screens/HomePane.kt` (1493 lines) is now
+`shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/HomePane.kt` (~1010 lines). The
+public composable signature is **unchanged** — same parameter names, same order, same defaults — so the
+Android host's call site at `ArchiveAssistantApp.kt:589-605` would compile against either copy.
+
+The atomic pass from the strategy above, applied in full. Six seams, each mechanical:
+
+| Android | shared |
+|---|---|
+| `@DrawableRes ornamentRes: Int` + `painterResource(id = R.drawable.X)` | `ornamentAsset: String` + `archivePainterOrPlaceholder("X")` |
+| `Icons.Default.Settings` / `Icons.Default.Close` | locally drawn `SettingsGlyph` / `ClearGlyph` |
+| `ImperialTitleFont` / `ImperialDisplayFont` | `LocalImperialFonts.current.title` / `.display` |
+| `System.currentTimeMillis()` | `Clock.System.now().toEpochMilliseconds()` |
+| `TOTAL_PENDING_MEMORIALS` (in `MemorialDemoModels.kt` in `:app`) | same-named `internal const` in `ArchiveVisuals.kt` |
+| `toChineseCount` from `com.lyihub.archiveassistant.util` | already existed in `:shared` at `util/ChineseNumerals.kt:3` |
+
+Four things are worth recording because they were judgement calls, not transcription:
+
+- **`overscrollEffect = null` was kept.** It is an Android-era argument to `verticalScroll`; the
+  overload taking `OverscrollEffect` is in the common API from Compose 1.7, verified by `javap` against
+  `foundation-desktop-1.8.0.jar` (both overloads present). It is the first suspect if the iOS compile
+  ever rejects the file.
+- **The fonts were not switched to `MaterialTheme.typography.*`** even though `archiveTypography()` now
+  supplies the same faces. Reason: the port's goal was line-for-line equivalence with Android, and the
+  explicit `.copy(fontFamily = …)` is redundant but harmless. Changing it would silently make the two
+  copies diverge on a detail nobody asked to change.
+- **The two icons are drawn locally rather than injected.** `:shared` has no icon dependency (the Gradle
+  cache holds only Android's `material-icons-core`), and an injected slot for two call sites pushes that
+  dependency onto every host. They carry `semantics { contentDescription }` so the affordances stay
+  reachable — `HeaderBackButton` set that precedent.
+- **The tile art was re-encoded at q85 but not downscaled**, unlike `home_search_tile`; the reasoning is
+  in the artwork section. The five tiles are drawn full-bleed, so resolution is load-bearing here.
+
+Not ported, and not needed by it: `HomePane` reads no `Context`, no `Uri`, no `BitmapFactory`. It is
+genuinely a resource-id conversion, which is why it could be done atomically.
+
+The root component now dispatches `AppPane.TOPICS` to it, and `TopicManagementDialogs` is composed
+outside that dispatch. `SettingsPane` was the only entry until now.
 
 ### `SettingsPane` migrated (compiles green)
 
@@ -509,12 +558,27 @@ paint actual's `getIdentifier` path could never have worked anyway, because `:sh
 resolve. Adding an asset is a two-step change: copy the file into `composeResources/drawable`, then
 add its `when` branch. Names with no branch return `null`, which is how callers degrade.
 
-**Every asset the migrated shared UI actually references is now bundled.** Only two names were still
-outstanding, and both are in: `home_search_tile` (SettingsPane) and `memorial_xuan_paper`
-(XuanPaperBackground). The pack holds 12 files / 1.48 MB. `home_search_tile` was resampled from
-5400x3600 (13.5 MB) to 1620x1080 (464 KB, ~3.4%) — it is drawn `ContentScale.Crop` as a paper texture
-under a panel, so the original resolution was ~3.3x beyond what any iPad renders, and 1620 px keeps a
-30% linear sample of the source. If it ever looks soft on a large display, 2160x1440 costs 864 KB.
+**Every asset the migrated shared UI actually references is now bundled** — 28 files, 3,376,501 B. The
+pack grew from 12 files because the HomePane port brought its own art: five tile JPEGs
+(`home_zhongshu_tile`, `home_menxia_tile`, `home_memorial_tile`, `home_clipboard_tile`,
+`home_search_new_tile`) re-encoded at their original pixel size, three ornament PNGs, two ornament vector
+XMLs, and six `tsieina_department_pattern_*` vector XMLs for the folder cards.
+
+`home_search_tile` was resampled from 5400x3600 (13.5 MB) to 1620x1080 (464 KB, ~3.4%) — it is drawn
+`ContentScale.Crop` as a paper texture under a panel, so the original resolution was ~3.3x beyond what any
+iPad renders, and 1620 px keeps a 30% linear sample of the source. If it ever looks soft on a large
+display, 2160x1440 costs 864 KB.
+
+The five tile JPEGs were re-encoded at q85 **without** downscaling (208,925 / 339,795 / 264,063 /
+406,394 / 170,820 B), which is a deliberately conservative choice: these are drawn as full-bleed
+backgrounds behind the dashboard tiles, so a resolution cut would be visible, while the JPEGs had a lot
+of lossless-recompression headroom. Unlike the 5400x3600 source above, none of them was mis-sized.
+
+The vector XMLs are a risk worth naming: Compose Multiplatform documents Android XML vector drawables as
+supported (they become `VectorPainter`) with the single restriction that external references to Android
+resources are not allowed. All ten XMLs here have a `<vector>` root and zero `@color` / `@drawable` /
+`?attr` / `@android:` hits, so they satisfy that restriction — but iOS rendering of them is verified only
+by the smoke screenshot, which shows the dashboard; a silently blank ornament would pass the pixel check.
 
 ### The calligraphic fonts are bundled but still unused — and that exposes a bigger gap
 
@@ -553,8 +617,10 @@ Compose resource API loads the face through composition), so resolving the faces
 @Composable function`. Keep the calls inline in the composable body.
 
 Material Icons are deliberately **not** a dependency of `:shared`; the iOS chrome uses SF Symbols.
-Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locally (see
-`CloseSearchGlyph` in HomePane).
+Icon affordances are injected slots (`backIcon`, `settingsIcon`) or drawn locally. `HeaderBackButton`
+was the first local glyph; the HomePane port added `SettingsGlyph` and `ClearGlyph` for the same reason —
+injecting an `ImageVector` for two call sites would push the dependency onto the host. (`CloseSearchGlyph`
+was named in an earlier draft of this document but never existed in code.)
 
 ### The Material theme gap — found, and closed in `f402b86`
 
@@ -603,8 +669,8 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 
 ## Remaining work
 
-1. Migrate the two remaining convertible screens (`HomePane`, `MemorialBriefingPane`) using the
-   atomic-pass strategy above.
+1. Migrate `MemorialBriefingPane` using the atomic-pass strategy above. (`HomePane` is done — see the
+   HomePane section.)
 2. Re-platform `DetailPane.kt`: image decoding, a document picker, content-source materialization and
    markdown-prefill writing are four Android seams that need shared abstractions first. The screen
    cannot be converted before they exist.
@@ -612,7 +678,7 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a
    pure `AndroidView` wrapper around `MemorialFoldView`.
-4. Finish the artwork move. **All 12 assets referenced by the migrated shared UI are bundled**, and
+4. Finish the artwork move. **All 28 assets referenced by the migrated shared UI are bundled**, and
    the two referenced calligraphic TTFs are too (12.9 MB; `ma_shan_zheng_regular` deliberately left
    behind, unreferenced). What remains is art referenced *only* by screens that have not been
    migrated yet. Read the size finding below before copying any of it.
@@ -679,10 +745,14 @@ Added in `be21549`. The module previously had no composition root at all — the
 fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { defaultStateStore() })
 ```
 
-It installs `ProvideImperialFonts` around the content, reads `stateStore.state`, and dispatches:
-`AppPane.SETTINGS` → `SettingsPane` (the only fully migrated screen); anything else →
-`NotYetMigratedPane`, which says so in words rather than drawing an empty box that would be
-indistinguishable from a layout bug.
+It installs `ProvideImperialFonts` and `ArchiveAssistantTheme` around the content, reads
+`stateStore.state`, and dispatches: `AppPane.TOPICS` → `HomePane` (the dashboard), `AppPane.SETTINGS` →
+`SettingsPane`; anything else → `NotYetMigratedPane`, which says so in words rather than drawing an empty
+box that would be indistinguishable from a layout bug. `TopicManagementDialogs` is composed outside the
+dispatch, matching the Android host — HomePane only *requests* a rename or delete through callbacks.
+
+`HomePane` was added to the dispatch after being migrated; `SettingsPane` was the only entry for a while,
+which is why older sections of this document read as if settings were the whole UI.
 
 The store needs no dependency injection to run: `ArchiveAssistantStateStore`'s constructor is
 platform-free (every parameter has a default and the defaults seed the built-in sample data). Note the
@@ -698,16 +768,16 @@ object IosComposeRoot {
   fun makeViewController(): UIViewController =
     createArchiveRootViewController(
       ArchiveAssistantStateStore(
-        initialState = ArchiveAssistantState(selectedPane = AppPane.SETTINGS)
+        initialState = ArchiveAssistantState(selectedPane = AppPane.TOPICS)
       )
     )
 }
 ```
 
-It opens on `AppPane.SETTINGS` rather than the store default `AppPane.TOPICS` on purpose: starting on
-`TOPICS` lands the preview on the "not yet migrated" message and verifies nothing, and this entry point
-exists to prove the resource and font pipeline renders on iOS. Two Kotlin/Native traps are worth
-remembering: a top-level Kotlin function exports under a file-facade name (hence the object for
+It opens on `AppPane.TOPICS` — the dashboard — which is also the store's own default; the value is spelled
+out so the entry point does not silently follow a future change to that default. It used to open on
+`SETTINGS`, which was correct only while settings was the sole migrated pane. Two Kotlin/Native traps are
+worth remembering: a top-level Kotlin function exports under a file-facade name (hence the object for
 anything Swift calls), and `ComposeUIViewController` reports no reliable intrinsic content size, so the
 Swift side must pin it with explicit constraints.
 

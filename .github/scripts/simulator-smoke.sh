@@ -5,7 +5,11 @@
 # Builds nothing itself: the workflow stages SharedKit.xcframework and runs xcodebuild before calling
 # this. What this adds is the part that was missing - actually *looking* at the app. It installs the
 # simulator build, launches it straight into the migrated Compose tree, and captures screenshots of
-# the native shell and of the Compose settings pane in both appearances.
+# the native shell and of the Compose dashboard in both appearances.
+#
+# Which Compose pane is captured follows the app, not this script: the preview entry point opens on
+# `AppPane.TOPICS` (the dashboard). It used to open on settings back when settings was the only
+# migrated pane, which is why the captures are named for the home pane now.
 #
 # The reason this exists: the shared Compose UI, the calligraphic fonts and the imperial palette were
 # only ever verified by a green compile. A compile cannot tell you whether a font rendered or whether
@@ -29,14 +33,18 @@ PREVIEW_ARGUMENT="--compose-preview"
 
 APP_PATH="${APP_PATH:-build/SimDerivedData/Build/Products/Debug-iphonesimulator/${PRODUCT_NAME}.app}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
-# Calibrated against real captures from run 37203635522 (measured at 4-pixel sampling, 5-bit colour
-# quantisation, exactly what check-screenshot.swift computes):
-#   native SwiftUI shell   86 distinct colours
-#   Compose tree, light  2663
-#   springboard fallback 2822   <- a crashed app passes any threshold, which is why crashes are
-#                                  detected separately rather than by this check
+# Calibrated against real captures (measured at 4-pixel sampling, 5-bit colour quantisation, exactly
+# what check-screenshot.swift computes):
+#   native SwiftUI shell     86 distinct colours
+#   Compose tree, light     167
+#   Compose tree, dark      154
+#   springboard fallback   2663 / 2822   <- a crashed app passes ANY threshold, which is why crashes
+#                                           are detected separately rather than by this check
 # A genuinely blank screen sits at 1-3. The threshold is deliberately far from 86: the sparse native
 # shell is legitimate content and must not sit one shade away from failing.
+#
+# Note that the springboard is the *colour-rich* failure: it must never be mistaken for success, which
+# is the whole reason the richer-looking numbers above are the failing ones.
 MIN_DISTINCT="${MIN_DISTINCT:-25}"
 
 log() { echo; echo "=== $* ==="; }
@@ -250,7 +258,7 @@ start_app "$ARTIFACT_DIR/console-compose-light.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
 sleep "$COMPOSE_SETTLE_SECONDS"
 assert_alive "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
-shot 02-compose-settings-light.png
+shot 02-compose-home-light.png
 stop_app
 check_no_crash "Compose light phase" "$ARTIFACT_DIR/console-compose-light.log"
 
@@ -262,7 +270,7 @@ start_app "$ARTIFACT_DIR/console-compose-dark.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
 sleep "$COMPOSE_SETTLE_SECONDS"
 assert_alive "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
-shot 03-compose-settings-dark.png
+shot 03-compose-home-dark.png
 stop_app
 check_no_crash "Compose dark phase" "$ARTIFACT_DIR/console-compose-dark.log"
 

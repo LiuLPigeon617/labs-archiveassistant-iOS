@@ -14,7 +14,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.lyihub.archiveassistant.domain.AppPane
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
+import com.lyihub.archiveassistant.ui.screens.HomePane
 import com.lyihub.archiveassistant.ui.screens.SettingsPane
+import com.lyihub.archiveassistant.ui.screens.TopicManagementDialogs
 import com.lyihub.archiveassistant.ui.theme.ArchiveAssistantTheme
 import com.lyihub.archiveassistant.ui.theme.ImperialFonts
 import com.lyihub.archiveassistant.ui.theme.ProvideImperialFonts
@@ -35,11 +37,14 @@ import com.lyihub.archiveassistant.ui.theme.ProvideImperialFonts
  *    platform-free (every parameter has a default, and the defaults seed the built-in sample
  *    data), so the root needs no dependency-injection scaffolding to run.
  *
- * ### Why this renders settings, and what is missing
+ * ### What it dispatches to, and what is missing
  *
- * `SettingsPane` is the only fully migrated screen, so it is what the root can show. `HomePane` and
- * `DetailPane` still live in the Android `:app` module, so there is no pane switching here yet —
- * whatever replaces this dispatch must arrive with those screens.
+ * [HomePane] (the dashboard) and [SettingsPane] are migrated, so those two panes render. Everything
+ * else — `DetailPane`, `MemorialBriefingPane` — still lives in the Android `:app` module, so the
+ * `else` branch says so instead of rendering an empty box.
+ *
+ * The dispatch is keyed on [AppPane] because the store already carries that field on every target;
+ * no extra navigation state had to be invented for this root.
  *
  * ### Known gap: no Material theme
  *
@@ -58,7 +63,27 @@ fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { def
     ArchiveAssistantTheme {
       val state = stateStore.state
 
-      if (state.selectedPane == AppPane.SETTINGS) {
+      if (state.selectedPane == AppPane.TOPICS) {
+        HomePane(
+          title = "聚合拾遗",
+          // Mirrors the Android host: while a search is active the dashboard shows only the topics
+          // that matched, which is why this is `searchedTopics` rather than `recentTopics`.
+          recentTopics =
+            if (state.homeSearchQuery.isBlank()) state.topics else state.searchedTopics,
+          itemsByTopic = state.itemsByTopic,
+          searchQuery = state.homeSearchQuery,
+          parserValidationMessage = state.parserValidationMessage,
+          smartSummarizationMessage = state.smartSummarizationMessage,
+          onTopicSelected = stateStore::openTopic,
+          onOpenSettings = stateStore::openSettings,
+          onCreateTopic = stateStore::openAddItemDialog,
+          onRenameTopic = stateStore::openRenameTopicDialog,
+          onDeleteTopic = stateStore::openDeleteConfirmDialog,
+          onSearchQueryChanged = stateStore::updateHomeSearchQuery,
+          onOpenClipboard = stateStore::openLatestClipboardDialog,
+          onOpenMemorialDemo = stateStore::openMemorialBriefing,
+        )
+      } else if (state.selectedPane == AppPane.SETTINGS) {
         SettingsPane(
           aiSettings = state.aiSettings,
           onAiSettingsChanged = stateStore::updateAiSettings,
@@ -82,6 +107,22 @@ fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { def
         // which would be indistinguishable from a layout bug.
         NotYetMigratedPane()
       }
+
+      // Dialogs sit outside the pane dispatch, exactly as they do in the Android host: HomePane only
+      // *requests* a rename or a delete through its callbacks, and without this the "管理" flow would
+      // be visibly broken — the buttons would do nothing at all.
+      TopicManagementDialogs(
+        topics = state.topics,
+        topicNameDialogMode = state.topicNameDialogMode,
+        topicNameDialogTopicId = state.topicNameDialogTopicId,
+        topicValidationMessage = state.topicValidationMessage,
+        deleteConfirmTopicId = state.deleteConfirmTopicId,
+        onConfirmCreateTopic = stateStore::confirmCreateTopic,
+        onConfirmRenameTopic = stateStore::confirmRenameTopic,
+        onConfirmDeleteTopic = stateStore::confirmDeleteTopic,
+        onCloseTopicNameDialog = stateStore::closeTopicNameDialog,
+        onCloseDeleteConfirmDialog = stateStore::closeDeleteConfirmDialog,
+      )
     }
   }
 }
@@ -115,7 +156,7 @@ private fun NotYetMigratedPane() {
     contentAlignment = Alignment.Center,
   ) {
     Text(
-      text = "共享 Compose 层还没有可显示的面板。\n设置页已就绪，主页与详情页仍在迁移中。",
+      text = "共享 Compose 层还没有可显示的面板。\n主页与设置页已就绪，详情页与奏折页仍在迁移中。",
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(24.dp),
     )
