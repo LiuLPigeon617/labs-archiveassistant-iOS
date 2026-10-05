@@ -665,7 +665,7 @@ private fun WorkBreathingLight(
       )
     }
   }
-  val wave = kotlin.math.sin(progress.value * Math.PI * 2.0).toFloat()
+  val wave = kotlin.math.sin(progress.value * kotlin.math.PI * 2.0).toFloat()
   val glow = ((wave + 1f) / 2f).coerceIn(0f, 1f)
   val activeGlow = intensity * glow
   Box(
