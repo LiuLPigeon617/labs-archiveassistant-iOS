@@ -413,11 +413,32 @@ source (the file goes through `archivePainter`). It resolved on desktop because
 `androidx.compose.ui.res` ships in the JVM artifact; package `androidx.compose.ui.res` does not
 exist for Kotlin/Native, so the iOS compile could not resolve the import. Fixed in `cb8e6a8`.
 
+The same class of failure recurred during the `HomePane` port — this time a **static call**, not an
+import:
+
+```
+e: HomePane.kt:668:47 Unresolved reference 'Math'.
+e: HomePane.kt:668:55 Unresolved reference 'times' for operator '*'.
+> Task :shared:compileKotlinIosArm64 FAILED
+```
+
+The line was `kotlin.math.sin(progress.value * Math.PI * 2.0)`. `Math.PI` is `java.lang.Math`,
+which exists on JVM and Android and is **absent from Kotlin/Native**; `kotlin.math.PI` is the
+portable spelling. Note the shape of this miss: the porting pass had already replaced the *function*
+`sin` with its `kotlin.math` form but left the *constant* `Math.PI` beside it, so a grep for
+`Math\.` hit the line and it was waved through as "already handled". Fixed in `a0d9f4c`.
+
 Practical rule: **when a `commonMain` file is ported from Android, strip the `androidx.compose.ui.res`
 import block even if the build is green**, and treat the macOS CI run as the only authoritative
-iOS compile. Grepping `androidx\.compose\.ui\.res|LocalContext|^import android\.` under
-`shared/src/commonMain` is a cheap pre-flight check; the only remaining hits live in `androidMain`
-(`platform/Platform.kt`, `data/Support.kt`), which iOS never compiles.
+iOS compile. Two cheap pre-flight checks, both required:
+
+- `androidx\.compose\.ui\.res|LocalContext|^import android\.` — catches the import form. The only
+  legitimate hits live in `androidMain` (`platform/Platform.kt`, `data/Support.kt`), which iOS never
+  compiles.
+- `Math\.|String\.format|\.format\(|Locale|System\.(currentTimeMillis|nanoTime)|java\.(lang|util|io)\.`
+  — catches the *call* form, which the import check misses entirely. In `commonMain` the legitimate
+  hits are only `kotlin.math.*` (a different token: `kotlin.math.PI`, never bare `Math.PI`) and
+  `Clock.System.now()`. Anything else is a defect, not a style nit.
 
 ### Remaining portable screens, and the strategy required
 

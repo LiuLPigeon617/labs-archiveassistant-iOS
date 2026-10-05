@@ -24,7 +24,7 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 首页（仪表盘）已迁入共享内核：`shared/src/commonMain/.../ui/screens/HomePane.kt` 逐段对应 Android 版 1493 行，六个 Android 接缝（`R.drawable` 整型 id、`painterResource`、Material 图标、`System.currentTimeMillis()`、`toChineseCount`、两个书法字体常量）已全部替换为跨平台写法；设置按钮与搜索清空图标改为本地 Canvas 绘制（模块刻意不依赖 Material Icons）。
 - 网络与时间已跨平台化：延迟测试改用 Ktor 与 `TimeSource.Monotonic`，预设序列化改为纯字符串读写，不再依赖 DataStore 类型。
 - 资源流水线已跨平台化：美术资源与字体经由 `composeResources` 提供，`archivePainter` 与 `archiveFontFamily` 已是单一 `commonMain` 实现，不再使用 `expect`/`actual`。
-- 已入包资源：28 个图形资源（约 3.2 MB，含首页 5 张 tile 的重编码版本与 10 个 XML vector）与 2 个书法字体（约 12.9 MB），打包总量约 16.1 MB。
+- 已入包资源：28 个图形资源（3,376,501 字节，约 3.4 MB，含首页 5 张 tile 的重编码版本与 10 个 XML vector）与 2 个书法字体（12,917,432 字节，约 12.9 MB），合计约 16.3 MB。
 - 目标平台：`desktop`（本机可验证的 JVM 目标）、`androidTarget`、`iosArm64`、`iosSimulatorArm64`；iOS 产物为名为 `SharedKit` 的 XCFramework。
 - iOS 宿主工程：`iosApp/` 提供 SwiftUI 外壳、原生设置页、状态桥接与平台引导代码；持续集成在 macOS 上构建未签名 IPA。
 - Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效）与 `ArchiveAssistantTheme`，并按 `state.selectedPane` 分发到已迁移的首页（`AppPane.TOPICS`）与设置页（`AppPane.SETTINGS`）；`TopicManagementDialogs` 与 Android 宿主一样挂在分发之外，否则首页的「管理 → 改名/删除」链路会断。iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂（以 `AppPane.TOPICS` 起步），经 `ArchiveComposeHostingViewController` 承载。
@@ -115,6 +115,15 @@ iOS（仅构建 iOS 产物时需要）：
 ```
 
 注意 JVM 目标在本分支中被命名为 `desktop`，因此任务名是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`。
+
+**桌面构建全绿不代表 iOS 能编译。** iOS 目标在 `shared/build.gradle.kts` 里被 `isMacOs()` 包住，在非 macOS 上根本不配置，所以本机连 `compileKotlinIos*` 任务都不存在；而 JVM 专有的 API 在桌面能解析、在 Kotlin/Native 上不存在。往 `shared/src/commonMain` 移植 Android 文件后，至少跑这两条预检（`Math.PI` 与 `java.lang.Math` 就属于第二条才能抓到、第一条抓不到的那类缺陷）：
+
+```bash
+rg 'androidx\.compose\.ui\.res|LocalContext|^import android\.' shared/src/commonMain   # import 形式
+rg 'Math\.|String\.format|\.format\(|Locale|System\.(currentTimeMillis|nanoTime)|java\.(lang|util|io)\.' shared/src/commonMain   # 静态调用形式
+```
+
+`commonMain` 里合法的命中只有 `kotlin.math.*`（注意 token 是 `kotlin.math.PI`，绝不是裸 `Math.PI`）与 `Clock.System.now()`，其余都是缺陷。
 
 构建 iOS 使用的 XCFramework：
 
