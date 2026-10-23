@@ -5,7 +5,8 @@
 # Builds nothing itself: the workflow stages SharedKit.xcframework and runs xcodebuild before calling
 # this. What this adds is the part that was missing - actually *looking* at the app. It installs the
 # simulator build, launches it straight into the migrated Compose tree, and captures screenshots of
-# the native shell and of the Compose dashboard in both appearances.
+# the native shell and of the Compose dashboard in both appearances, first on an iPhone and then on an
+# iPad (the native shell is a `NavigationSplitView` and the project ships TARGETED_DEVICE_FAMILY 1,2).
 #
 # Which Compose pane is captured follows the app, not this script: the preview entry point opens on
 # `AppPane.TOPICS` (the dashboard). It used to open on settings back when settings was the only
@@ -22,6 +23,7 @@
 #   APP_PATH       path to the built .app (default: the Debug-iphonesimulator product)
 #   ARTIFACT_DIR   where screenshots and logs land (default: build/simulator-smoke)
 #   MIN_DISTINCT   minimum distinct colours for a screenshot to count as rendered (default: 25)
+#   RUN_IPAD       0 to skip the iPad pass (default: 1)
 #
 # Output: PNG screenshots, console/log captures, screenshot-checks.txt, summary.md in ARTIFACT_DIR.
 
@@ -46,6 +48,13 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
 # Note that the springboard is the *colour-rich* failure: it must never be mistaken for success, which
 # is the whole reason the richer-looking numbers above are the failing ones.
 MIN_DISTINCT="${MIN_DISTINCT:-25}"
+
+# The iPad pass reuses MIN_DISTINCT. That is a deliberate under-claim rather than a calibration: the
+# numbers above were measured on a 1290x2796 iPhone capture, and an iPad capture is a different image
+# size and a different layout, so reusing the value can only err on the side of not masking a blank
+# screen. The first iPad capture is recorded in the summary, and the threshold should be re-derived
+# from it once one exists.
+RUN_IPAD="${RUN_IPAD:-1}"
 
 log() { echo; echo "=== $* ==="; }
 die() { echo "::error::$*"; exit 1; }
@@ -75,37 +84,63 @@ log "available simulators"
 # or the runtime choice looks wrong, and a truncated head is what makes that debugging guesswork.
 xcrun simctl list devices available
 
-# Emit "Name|UDID" pairs, preferring a recent full-size iPhone from the newest runtime.
+# Selects a device, boots it, installs the app and arms the crash-report marker.
+#
+# Emits "Name|UDID" pairs for one device family, preferring a match for `$2` from the newest runtime.
 #
 # Two things about this listing cost a CI round trip: simctl pads every device line with a TRAILING
 # SPACE, so an anchored `)$` never matched and the parse silently produced nothing; and the runtimes
 # are grouped oldest-first, so taking the last match lands on the newest runtime.
-DEVICES="$(xcrun simctl list devices available \
-  | sed -nE 's/^[[:space:]]*(iPhone [^(]*) \(([0-9A-Fa-f-]+)\) \(.*\)[[:space:]]*$/\1|\2/p')"
-if [ -z "$DEVICES" ]; then
-  echo "::error::could not parse any iPhone simulator out of the simctl listing above."
-  exit 1
-fi
-
+#
 # `iPhone SE` is excluded on purpose: it is the one current phone whose width would misrepresent the
-# layout, and the 16-series-and-later list is where the full-size devices live.
-PICK="$(printf '%s\n' "$DEVICES" | grep -E '^iPhone (1[5-9]|Air)' | tail -n 1 || true)"
-[ -n "$PICK" ] || PICK="$(printf '%s\n' "$DEVICES" | tail -n 1)"
+# layout, and the 16-series-and-later list is where the full-size devices live. The iPad preference is
+# a plain `^iPad Pro` rather than an enumerate-the-lineup regex, because Apple's iPad naming churns far
+# more often than the "iPhone 1x" pattern does; any iPad is an improvement over no iPad, so the
+# fallback to "last iPad listed" is a legitimate outcome rather than a failure.
+prepare_device() {
+  local kind="$1"     # "iPhone" or "iPad"
+  local prefer="$2"   # extended regex over the "Name|UDID" pairs; empty means "no preference"
+  local slug="$3"     # used for the crash marker so each device has its own
+  local devices pick
 
-DEVICE_NAME="${PICK%%|*}"
-UDID="${PICK##*|}"
-echo "selected: $DEVICE_NAME ($UDID)"
+  # The name group is `.*` and not `[^(]*` because iPad device names contain parentheses themselves
+  # ("iPad Pro 13-inch (M4)", "iPad (10th generation)"); an "up to the first paren" pattern parses
+  # every iPhone and then silently finds no iPad at all. The 36-character UUID group is what keeps the
+  # greedy `.*` honest.
+  devices="$(xcrun simctl list devices available \
+    | sed -nE "s/^[[:space:]]*(${kind} .*) \(([0-9A-Fa-f-]{36})\) \([A-Za-z ]+\)[[:space:]]*$/\\1|\\2/p")"
+  if [ -z "$devices" ]; then
+    die "could not parse any ${kind} simulator out of the simctl listing above."
+  fi
 
-log "booting simulator"
-xcrun simctl boot "$UDID" 2>/dev/null || echo "(already booted)"
-xcrun simctl bootstatus "$UDID" -b
+  pick=""
+  if [ -n "$prefer" ]; then
+    pick="$(printf '%s\n' "$devices" | grep -E "$prefer" | tail -n 1 || true)"
+  fi
+  [ -n "$pick" ] || pick="$(printf '%s\n' "$devices" | tail -n 1)"
 
-log "installing app"
-xcrun simctl install "$UDID" "$APP_PATH"
+  DEVICE_NAME="${pick%%|*}"
+  UDID="${pick##*|}"
+  echo "selected: $DEVICE_NAME ($UDID)"
 
-# Anything written to the crash directory after this marker is from this run.
-MARKER="$ARTIFACT_DIR/.smoke-start"
-touch "$MARKER"
+  log "booting simulator"
+  xcrun simctl boot "$UDID" 2>/dev/null || echo "(already booted)"
+  xcrun simctl bootstatus "$UDID" -b
+
+  log "installing app"
+  xcrun simctl install "$UDID" "$APP_PATH"
+
+  # Anything written to the crash directory after this marker is from this device's run. It is
+  # per-device so that a report from the iPhone cannot be misattributed to an iPad phase.
+  MARKER="$ARTIFACT_DIR/.smoke-start-${slug}"
+  touch "$MARKER"
+}
+
+prepare_device iPhone '^iPhone (1[5-9]|Air)' iphone
+IPHONE_NAME="$DEVICE_NAME"
+IPHONE_UDID="$UDID"
+IPAD_NAME=""
+IPAD_UDID=""
 
 # ---------------------------------------------------------------------------------------------------
 # Crash reports
@@ -243,7 +278,7 @@ assert_alive() {
 COMPOSE_SETTLE_SECONDS=15
 NATIVE_SETTLE_SECONDS=8
 
-log "1/3 native shell, light appearance"
+log "iPhone 1/3 native shell, light appearance"
 xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
 start_app "$ARTIFACT_DIR/console-native-shell.log"
 assert_running "native shell" "$ARTIFACT_DIR/console-native-shell.log"
@@ -253,7 +288,7 @@ shot 01-native-shell-light.png
 stop_app
 check_no_crash "native shell phase" "$ARTIFACT_DIR/console-native-shell.log"
 
-log "2/3 Compose tree, light appearance"
+log "iPhone 2/3 Compose tree, light appearance"
 start_app "$ARTIFACT_DIR/console-compose-light.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
 sleep "$COMPOSE_SETTLE_SECONDS"
@@ -264,7 +299,7 @@ check_no_crash "Compose light phase" "$ARTIFACT_DIR/console-compose-light.log"
 
 # Relaunch rather than toggling appearance under a running app: this exercises the value
 # `isSystemInDarkTheme()` resolves at first composition, which is what the theme reads.
-log "3/3 Compose tree, dark appearance"
+log "iPhone 3/3 Compose tree, dark appearance"
 xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
 start_app "$ARTIFACT_DIR/console-compose-dark.log" "$PREVIEW_ARGUMENT"
 assert_running "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
@@ -274,14 +309,69 @@ shot 03-compose-home-dark.png
 stop_app
 check_no_crash "Compose dark phase" "$ARTIFACT_DIR/console-compose-dark.log"
 
-# ---------------------------------------------------------------------------------------------------
-# App log and crash reports
-# ---------------------------------------------------------------------------------------------------
-
-log "app log (last 3 minutes)"
+log "iPhone app log (last 3 minutes)"
 xcrun simctl spawn "$UDID" log show --last 3m --style compact \
-  --predicate "process == \"$PRODUCT_NAME\"" > "$ARTIFACT_DIR/app-log.txt" 2>&1 || true
-wc -l < "$ARTIFACT_DIR/app-log.txt" | tr -d ' ' | sed 's/$/ lines captured/'
+  --predicate "process == \"$PRODUCT_NAME\"" > "$ARTIFACT_DIR/app-log-iphone.txt" 2>&1 || true
+wc -l < "$ARTIFACT_DIR/app-log-iphone.txt" | tr -d ' ' | sed 's/$/ lines captured/'
+
+# ---------------------------------------------------------------------------------------------------
+# iPad
+# ---------------------------------------------------------------------------------------------------
+#
+# The native shell is a `NavigationSplitView` and the project ships `TARGETED_DEVICE_FAMILY = "1,2"`,
+# so the two-column layout only exists on iPad. Capturing it is the cheapest way to notice that the
+# split view or the hosting controller's orientation forwarding broke — neither shows up on a phone.
+#
+# Landscape is requested but not guaranteed: `simctl` has no rotation command at all, and whether
+# `devicectl device orientation set` exists depends on the Xcode on the runner. So the request is
+# best-effort and the *screenshot dimensions* are what actually reports the result — a 2048x2732
+# capture means the landscape request did not take, and the summary says which one was obtained.
+# Do not trust the rotation command's exit code for this: an iPad app that pins its own orientation
+# can make it a silent no-op.
+if [ "$RUN_IPAD" != "0" ]; then
+  prepare_device iPad '^iPad Pro' ipad
+  IPAD_NAME="$DEVICE_NAME"
+  IPAD_UDID="$UDID"
+
+  try_landscape() {
+    if xcrun devicectl device orientation get --device "$UDID" >/dev/null 2>&1; then
+      if xcrun devicectl device orientation set --device "$UDID" landscape >/dev/null 2>&1; then
+        echo "orientation: landscape requested via devicectl (verify via screenshot dimensions)."
+      else
+        echo "orientation: devicectl rejected the landscape request; using the runtime's orientation."
+      fi
+    else
+      echo "orientation: this Xcode's devicectl has no usable 'device orientation'; using the runtime's orientation."
+    fi
+  }
+
+  log "iPad: preparing, landscape if this Xcode supports it"
+  xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
+  try_landscape
+
+  log "iPad 1/2 native shell, light appearance"
+  start_app "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  assert_running "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  sleep "$NATIVE_SETTLE_SECONDS"
+  assert_alive "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  shot 04-ipad-native-shell-light.png
+  stop_app
+  check_no_crash "iPad native shell phase" "$ARTIFACT_DIR/console-ipad-native-shell.log"
+
+  log "iPad 2/2 Compose tree, light appearance"
+  start_app "$ARTIFACT_DIR/console-ipad-compose-light.log" "$PREVIEW_ARGUMENT"
+  assert_running "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
+  sleep "$COMPOSE_SETTLE_SECONDS"
+  assert_alive "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
+  shot 05-ipad-compose-home-light.png
+  stop_app
+  check_no_crash "iPad Compose phase" "$ARTIFACT_DIR/console-ipad-compose-light.log"
+
+  log "iPad app log (last 3 minutes)"
+  xcrun simctl spawn "$UDID" log show --last 3m --style compact \
+    --predicate "process == \"$PRODUCT_NAME\"" > "$ARTIFACT_DIR/app-log-ipad.txt" 2>&1 || true
+  wc -l < "$ARTIFACT_DIR/app-log-ipad.txt" | tr -d ' ' | sed 's/$/ lines captured/'
+fi
 
 echo "no crash reports for $BUNDLE_ID in any phase."
 
@@ -309,7 +399,12 @@ done
   echo
   echo "| | |"
   echo "|---|---|"
-  echo "| simulator | \`$DEVICE_NAME\` (\`$UDID\`) |"
+  echo "| iPhone | \`$IPHONE_NAME\` (\`$IPHONE_UDID\`) |"
+  if [ -n "$IPAD_NAME" ]; then
+    echo "| iPad | \`$IPAD_NAME\` (\`$IPAD_UDID\`) |"
+  else
+    echo "| iPad | skipped (\`RUN_IPAD=0\`) |"
+  fi
   echo "| host arch | \`$HOST_ARCH\` |"
   echo "| launch argument | \`$PREVIEW_ARGUMENT\` |"
   echo "| screenshots | $SHOT_COUNT |"
@@ -318,6 +413,10 @@ done
   echo "Screenshots for each appearance are in the \`ios-simulator-smoke\` artifact. The check below"
   echo "only proves content was drawn - it cannot tell a correct layout from a broken one, so the"
   echo "images themselves are the real output."
+  echo
+  echo "The capture dimensions printed below are also the only honest record of the iPad orientation:"
+  echo "a landscape request that silently did nothing shows up as a portrait-sized image, not as an"
+  echo "error."
   echo
   echo '```'
   cat "$ARTIFACT_DIR/screenshot-checks.txt"
