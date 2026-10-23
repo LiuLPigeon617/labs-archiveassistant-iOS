@@ -21,7 +21,7 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 
 - 状态层已完整迁入 `shared/src/commonMain`：`ArchiveAssistantState` 与 `ArchiveAssistantStateStore` 已不依赖任何 Android API，通过 `platformFileStore`、`BundledAssetReader`、`platformLogger`、`resolveContentSource` 等接缝获取平台能力。
 - 设置页已迁入共享内核：`SettingsPane` 及其两个数据依赖（AI 端点延迟测试、AI 引擎预设）、返回按钮组件均为跨平台实现。
-- 首页（仪表盘）已迁入共享内核：`shared/src/commonMain/.../ui/screens/HomePane.kt` 逐段对应 Android 版 1493 行，六个 Android 接缝（`R.drawable` 整型 id、`painterResource`、Material 图标、`System.currentTimeMillis()`、`toChineseCount`、两个书法字体常量）已全部替换为跨平台写法；设置按钮与搜索清空图标改为本地 Canvas 绘制（模块刻意不依赖 Material Icons）。
+- 首页（仪表盘）已迁入共享内核：`shared/src/commonMain/.../ui/screens/HomePane.kt` 逐段对应 Android 版 1493 行，六个 Android 接缝（`R.drawable` 整型 id、`painterResource`、Material 图标、`System.currentTimeMillis()`、`toChineseCount`、两个书法字体常量）已全部替换为跨平台写法；设置按钮与搜索清空图标改为本地 Canvas 绘制（模块刻意不依赖 Material Icons）。iOS 侧已由持续集成截图验证渲染，不是只「编译通过」；移植中唯一一次 iOS 编译失败是 `Math.PI`（Kotlin/Native 没有 `java.lang.Math`），已改为 `kotlin.math.PI`。
 - 网络与时间已跨平台化：延迟测试改用 Ktor 与 `TimeSource.Monotonic`，预设序列化改为纯字符串读写，不再依赖 DataStore 类型。
 - 资源流水线已跨平台化：美术资源与字体经由 `composeResources` 提供，`archivePainter` 与 `archiveFontFamily` 已是单一 `commonMain` 实现，不再使用 `expect`/`actual`。
 - 已入包资源：28 个图形资源（3,376,501 字节，约 3.4 MB，含首页 5 张 tile 的重编码版本与 10 个 XML vector）与 2 个书法字体（12,917,432 字节，约 12.9 MB），合计约 16.3 MB。
@@ -29,13 +29,14 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - iOS 宿主工程：`iosApp/` 提供 SwiftUI 外壳、原生设置页、状态桥接与平台引导代码；持续集成在 macOS 上构建未签名 IPA。
 - Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效）与 `ArchiveAssistantTheme`，并按 `state.selectedPane` 分发到已迁移的首页（`AppPane.TOPICS`）与设置页（`AppPane.SETTINGS`）；`TopicManagementDialogs` 与 Android 宿主一样挂在分发之外，否则首页的「管理 → 改名/删除」链路会断。iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂（以 `AppPane.TOPICS` 起步），经 `ArchiveComposeHostingViewController` 承载。
 - 主题已迁入共享内核：`ArchiveAssistantTheme` 现位于 `shared/src/commonMain/.../ui/theme/Theme.kt`，把 `MaterialTheme.colorScheme` 映射到皇家配色，并移植了完整 15 级字阶；浅色与深色两套配色都保留，`SettingsPane`、`HomePane` 等界面不再回落到默认紫色强调色。
-- iOS 侧有截图级验证：持续集成新增 `Simulator smoke (screenshots)` 作业，在 macOS runner 上构建模拟器版本并真正启动，分别截取原生外壳、共享 Compose 界面（浅色）与共享 Compose 界面（深色）三张截图，连同 App 日志与崩溃报告一起作为构建产物上传。字体与配色是否真的渲染出来，由这三张图回答，而不再只能靠「编译通过」推断。截图文件名随预览起点变化：预览起点自首页迁移完成起为 `AppPane.TOPICS`，故为 `02/03-compose-home-*.png`；早期产物中的 `02/03-compose-settings-*.png` 来自起点仍是设置页的那一轮。
+- iOS 侧有截图级验证：持续集成新增 `Simulator smoke (screenshots)` 作业，在 macOS runner 上构建模拟器版本并真正启动，分别截取原生外壳、共享 Compose 界面（浅色）与共享 Compose 界面（深色）三张截图，连同 App 日志与崩溃报告一起作为构建产物上传。字体与配色是否真的渲染出来，由这三张图回答，而不再只能靠「编译通过」推断。截图文件名随预览起点变化：预览起点自首页迁移完成起为 `AppPane.TOPICS`，故为 `02/03-compose-home-*.png`；早期产物中的 `02/03-compose-settings-*.png` 来自起点仍是设置页的那一轮。首页迁移后的那次运行（`fc127ec`）里，两张 Compose 截图的量化色彩数从设置页时代的 167 / 154 涨到 1153 / 1154，是「仪表盘真的画出来了」的量化证据。**注意本仓库的构建产物保留期很短**，隔一段时间再去下载会得到 `Artifact has expired`，需要看图时应当场下载或重新触发 `gh workflow run ios-build.yml`。
 
 ## 尚未完成与已知问题
 
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是详情页还没迁入共享内核。
 - 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与奏折简报页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接；首页已在 `shared/.../ui/screens/HomePane.kt` 完成迁移。
-- 首页迁移后的两个已知限制：设置按钮与搜索清空按钮是本地 Canvas 绘制的近似字形（模块不依赖 Material Icons），不是原始矢量图标；首页只验证了编译与测试，其在 iOS 上的实际渲染仍只有截图冒烟测试覆盖，且截图只捕获首帧，点击 tile 之后的行为不在覆盖范围内。
+- 首页迁移后的三个已知限制：设置按钮与搜索清空按钮是本地 Canvas 绘制的近似字形（模块不依赖 Material Icons），不是原始矢量图标；iOS 上的实际渲染只有截图冒烟测试覆盖，且截图只捕获首帧，点击 tile 之后的行为不在覆盖范围内；首页「新建/改名/删除」三个按钮点了没反应，因为共享 store 的 `openCreateTopicDialog()` / `openRenameTopicDialog()` 会直接把对话框模式置空并给出 `TOPIC_CRUD_DISABLED_MESSAGE`（与「六部分类当前固定」一致），这不是本次迁移引入的缺陷。
+- 10 个 XML vector drawable 在 iOS 上尚无人眼确认：首页的 5 个纹饰与 6 个文件夹底纹是 Android 格式的 `<vector>` XML，Compose Multiplatform 文档支持该格式，文件也已过「无 Android 外部引用」检查，但 `archivePainterOrPlaceholder` 对解析失败的名字会静默返回 1×1 透明图——也就是说即使全都没画出来，截图冒烟的像素检查照样通过。这一条只能靠人看截图确认。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。
 - iOS 无法在本机构建验证，且截图覆盖不完整：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，iOS 编译、Swift 侧代码与界面渲染目前全部由持续集成验证。截图冒烟测试只在 iPhone 运行时上运行，iPad、横屏以及首次呈现之后的任何交互都不在覆盖范围内；其像素检查也只能发现「画面空白或纯色」，无法判断布局是否正确，因此仍需人工看图。
 - JVM 目标命名容易踩坑：本分支的 JVM 目标名为 `desktop`（`shared/build.gradle.kts` 中为 `jvm("desktop")`），对应的任务是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`；引用错的名称会让构建在任务解析阶段直接失败。
@@ -147,7 +148,7 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 
 **Compose 的 `compose-resources` 必须由 Xcode 构建阶段同步进 App 包，不能只靠 Gradle 编出 framework。** Compose Multiplatform 不把字体和图片放进 framework，而是用 `SyncComposeResourcesForIosTask` 拷进 App 包，插件把这个任务挂在 `embedAndSign<Framework>AppleFrameworkForXcode` 上。本项目在 `iosApp/iosApp.xcodeproj` 的「Build SharedKit.xcframework」阶段手工暂存 XCFramework、从不走那条链，因此该目录一直是空的，App 一读字体就抛 `MissingResourceException` 崩溃——**编译器、链接器与 `codesign` 都看不出这个问题**，只有真正运行才发现。现在该构建阶段会显式运行这个同步任务（任务名按 framework classifier 推导，用 `:shared:tasks --all` 在运行时发现，不硬编码），两个 CI 作业也都在构建产物上断言 `compose-resources` 里至少有 `.ttf`。
 
-最近一次验证过的构建（提交 `4b0547c`，运行 37214783385）两个作业全绿：`Build unsigned IPA` 与 `Simulator smoke (screenshots)` 都通过，模拟器截图里能看到真实的共享 Compose 设置界面，未签名 IPA 为 23,392,233 字节。共享内核的单测报告、`xcodebuild` 日志与三张截图一并作为构建产物上传。
+最近一次验证过的构建（提交 `fc127ec`，运行 37300716982）两个作业全绿：`Build unsigned IPA` 与 `Simulator smoke (screenshots)` 都通过，模拟器截图里能看到真实的共享 Compose 首页仪表盘（浅色与深色各一张）。此前一轮（提交 `4b0547c`，运行 37214783385）拍到的是设置页，未签名 IPA 为 23,392,233 字节。共享内核的单测报告、`xcodebuild` 日志与三张截图一并作为构建产物上传，但保留期很短，见上文。
 
 体积变化值得注意，而这里有一条**容易搞反的归因**：
 

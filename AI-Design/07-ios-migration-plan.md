@@ -137,12 +137,19 @@ in a dedicated step; the in-Xcode build phase remains for developers building fr
 documents that a first build either needs the Gradle task run once or stages the framework for the
 next build.
 
-Status: the pipeline is green, and it has real green runs behind it. **Run 37214783385 on `4b0547c`**
-is the strongest one: both jobs — `Build unsigned IPA` and `Simulator smoke (screenshots)` — concluded
-`success`, and the simulator produced three screenshots of the app actually rendering the shared Compose
-settings pane. An earlier milestone was **run 37199938026 on `135d2f2`**, the first run whose Compose
-root compiled and archived (15 steps plus 4 post steps, 11 minutes). Before `10a44a8` the workflow had
-**never** passed.
+Status: the pipeline is green, and it has real green runs behind it. **Run 37300716982 on `fc127ec`**
+is the current strongest one: both jobs — `Build unsigned IPA` and `Simulator smoke (screenshots)` —
+concluded `success`, and the simulator produced three screenshots of the app rendering the migrated
+homepage dashboard; see the pixel table further down. The previous milestone was **run 37214783385 on
+`4b0547c`**, the first run where the Compose tree was actually on screen (the settings pane). An earlier
+one was **run 37199938026 on `135d2f2`**, the first run whose Compose root compiled and archived (15 steps
+plus 4 post steps, 11 minutes). Before `10a44a8` the workflow had **never** passed.
+
+One operational caveat learned the hard way: **this repository's artifact retention is short** — the
+screenshots from run 37300716982 were already gone (`Artifact has expired`, HTTP 410) when inspected on
+2026-10-23, 18 days later. The pixel statistics survive only in that run's job log; if a capture needs to
+be looked at, either download it promptly or re-dispatch the workflow (`gh workflow run ios-build.yml`)
+rather than assume the artifact will still be there.
 
 The workflow has a **second job**, `Simulator smoke (screenshots)`, which runs in parallel and does
 not gate the IPA. It exists because a green archive build proved nothing about what the app draws; see
@@ -325,6 +332,25 @@ calligraphic title font, the xuan-paper background texture, and the cinnabar/ter
 The font question that motivated this whole path is answered — `archiveFontFamily` resolves and the
 typeface paints, rather than silently falling back to a system serif.
 
+**The dashboard is on screen too (run 37300716982, commit `fc127ec`).** After `HomePane` was migrated and
+the preview entry point moved from `AppPane.SETTINGS` to `AppPane.TOPICS`, the same job reports pixel
+statistics that make the difference legible in numbers:
+
+| capture | distinct colours | mean luminance |
+|---|---|---|
+| `01-native-shell-light.png` | 86 | 237.6 |
+| `02-compose-home-light.png` | 1153 | 202.8 |
+| `03-compose-home-dark.png` | 1154 | 111.3 |
+
+Before the migration the two Compose captures measured 167 and 154. The dashboard's tile backgrounds,
+cut-corner cards and ornament overlays push that past a thousand, so the check is no longer merely
+asking "did anything paint" — a placeholder or a mostly-empty pane could not reach that count. The dark
+capture's mean luminance halving is also the only run so far where `isSystemInDarkTheme()` was exercised
+on a screen with more than one surface on it.
+
+The honest caveat: richer pixels are not proof the layout is right. Nothing here verifies that the
+mosaic's columns line up, that the ornaments are the intended artwork, or that a tap does anything.
+
 Two numbers from this run correct earlier claims in this document:
 
 | build | state | IPA bytes |
@@ -345,6 +371,15 @@ for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only
 — the reason `NavigationSplitView` and the orientation forwarding in the hosting controller exist — is
 still unverified. A screenshot of a pane is also not a test that the pane *works*: the capture is the
 first frame, so tapping through the dashboard's tiles is still out of scope.
+
+One specific gap inside the current coverage: **the XML vector drawables have never been confirmed to
+render on iOS.** Five of the `HomePane` ornaments and the six `tsieina_department_pattern_*` folder
+patterns are Android-format `<vector>` XML. Compose Multiplatform documents support for that format
+(`painterResource` returns a `VectorPainter`), and all ten files pass the "no external Android resource
+references" restriction, but the only proof so far is that the compile and the pixel check pass.
+`archivePainterOrPlaceholder` returns a 1×1 transparent painter for an asset it cannot resolve, so a
+parse failure in `:shared` would draw nothing and still sail through `check-screenshot.swift`. Confirming
+this needs a human looking at the capture, not a green job.
 
 ### Kotlin/Swift interop notes
 
@@ -497,7 +532,7 @@ Net: **two** screens remain convertible, not four. That is a scope reduction of 
 what this document previously implied. One of the two, `HomePane`, has since been migrated — see the
 HomePane section.
 
-### `HomePane` migrated (compiles green)
+### `HomePane` migrated (compiles and renders green)
 
 `app/src/main/java/com/lyihub/archiveassistant/ui/screens/HomePane.kt` (1493 lines) is now
 `shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/HomePane.kt` (~1010 lines). The
@@ -537,6 +572,19 @@ genuinely a resource-id conversion, which is why it could be done atomically.
 
 The root component now dispatches `AppPane.TOPICS` to it, and `TopicManagementDialogs` is composed
 outside that dispatch. `SettingsPane` was the only entry until now.
+
+Status of the port: **compiles and renders, verified by CI**. Run 37299369306 (commit `777c744`) failed
+on an iOS-only compile error — `HomePane.kt:668` used `Math.PI`, and Kotlin/Native has no `java.lang.Math`
+facade, so `efab267` switched it to `kotlin.math.PI`. That failure is the whole reason the pre-flight
+check in the section above exists: the desktop JVM build accepted `Math.PI` happily. Run 37300716982 on
+`fc127ec` is the first green run with the dashboard on screen.
+
+Also worth stating plainly: **the dashboard's "新建 / 改名 / 删除" actions do nothing on the shared side,
+by design of the store, not by accident of this port.** `ArchiveAssistantStateStore.openCreateTopicDialog()`
+and `openRenameTopicDialog()` set `topicNameDialogMode = null` and `topicValidationMessage =
+TOPIC_CRUD_DISABLED_MESSAGE`, so `TopicManagementDialogs` never opens. That matches the README's "六部分类
+当前固定", but it means a reviewer poking at the migrated homepage should not read the dead buttons as a
+migration defect.
 
 ### `SettingsPane` migrated (compiles green)
 
