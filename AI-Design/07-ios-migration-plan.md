@@ -151,6 +151,16 @@ screenshots from run 37300716982 were already gone (`Artifact has expired`, HTTP
 be looked at, either download it promptly or re-dispatch the workflow (`gh workflow run ios-build.yml`)
 rather than assume the artifact will still be there.
 
+Because of that, every smoke run is now archived locally: `.github/scripts/fetch-smoke-screenshots.sh`
+pulls one run's artifact into `screenshot/<runId>-<shortSha>/` under the repository root and keeps only
+the **two most recent** archives, pruning the rest. It stores the PNGs plus `summary.md`,
+`screenshot-checks.txt`, `crashes.txt` and the app/console logs, and drops the `xcodebuild` logs, which
+are large and can be re-read from the run page. The images are deliberately **not** committed — only
+`screenshot/README.md` documents the convention, and `.gitignore` excludes the rest of the directory.
+Failed runs are downloadable too, which matters because a failed run's screenshots are usually the ones
+worth looking at. Pruning sorts numerically by run id rather than by file timestamp, since run ids increase
+monotonically and a copy or checkout may not preserve mtimes.
+
 The workflow has a **second job**, `Simulator smoke (screenshots)`, which runs in parallel and does
 not gate the IPA. It exists because a green archive build proved nothing about what the app draws; see
 the section below. Note that the parallel job roughly doubles the runner time of the workflow.

@@ -31,6 +31,11 @@ iosApp/iosApp.xcodeproj/project.xcworkspace/xcuserdata/
 .dsh-edit-review.json
 .dsh-edit-review-archive.json
 
+# Locally kept simulator screenshots (see screenshot/README.md). The images are multi-megabyte
+# artifacts of a CI run, not sources, so only the README that documents the convention is tracked.
+screenshot/*
+!screenshot/README.md
+
 # Kotlin
 .kotlin/
 

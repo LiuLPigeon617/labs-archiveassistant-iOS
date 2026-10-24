@@ -144,6 +144,16 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 
 `--compose-preview` 会让 App 启动时直接进入共享 Compose 预览界面；`simctl` 可以传启动参数但点不了工具栏按钮，因此这条参数只为截图而存在，它改变的是启动位置而非渲染内容。
 
+**截图要抓回本地留档，别让产物过期。** 本仓库的 Actions 产物保留期很短，隔几周再去下载只会得到 `Artifact has expired`，而像素检查判不了布局对错、也发现不了 XML vector 静默退回透明占位——这些只能人眼看图。所以每次冒烟测试跑完，用下面的脚本把图抓到项目里的 `screenshot/` 目录，**只保留最近两次**，更早的自动清理：
+
+```bash
+.github/scripts/fetch-smoke-screenshots.sh                                  # 当前分支最新一次 run
+.github/scripts/fetch-smoke-screenshots.sh 39979857765                      # 指定 run
+"C:/Program Files/Git/bin/bash.exe" .github/scripts/fetch-smoke-screenshots.sh --list   # Windows 上看已保留哪些
+```
+
+归档按 `screenshot/<runId>-<shortSha>/` 存放，只留 `*.png`、`summary.md`、`screenshot-checks.txt`、`crashes.txt`、App 日志与启动控制台日志；`xcodebuild` 日志不留（体积大且随时能在 run 页面重看）。图片本身不进版本库，`.gitignore` 排除了该目录除说明文件外的一切内容，策略与用法写在 `screenshot/README.md`。失败的 run 同样可以下载——失败那次的截图通常才是最该看的。
+
 **`iosApp/iosApp/Info.plist` 里的 `CADisableMinimumFrameDurationOnPhone` 不能删。** Compose Multiplatform 在进程启动时会校验这一项，缺失或为 `false` 就抛 `IllegalStateException` 并让 App 直接崩溃——而且它是在 SwiftUI 外壳启动之后才生效，所以「外壳正常」并不代表共享界面没问题。它也不是纯粹的仪式：没有这一项，iOS 会在 ProMotion 机型上把 App 限制在 60 Hz。这个坑是截图冒烟测试第一次运行时抓到的，详见 `AI-Design/07-ios-migration-plan.md` 的模拟器冒烟测试一节。
 
 **Compose 的 `compose-resources` 必须由 Xcode 构建阶段同步进 App 包，不能只靠 Gradle 编出 framework。** Compose Multiplatform 不把字体和图片放进 framework，而是用 `SyncComposeResourcesForIosTask` 拷进 App 包，插件把这个任务挂在 `embedAndSign<Framework>AppleFrameworkForXcode` 上。本项目在 `iosApp/iosApp.xcodeproj` 的「Build SharedKit.xcframework」阶段手工暂存 XCFramework、从不走那条链，因此该目录一直是空的，App 一读字体就抛 `MissingResourceException` 崩溃——**编译器、链接器与 `codesign` 都看不出这个问题**，只有真正运行才发现。现在该构建阶段会显式运行这个同步任务（任务名按 framework classifier 推导，用 `:shared:tasks --all` 在运行时发现，不硬编码），两个 CI 作业也都在构建产物上断言 `compose-resources` 里至少有 `.ttf`。
@@ -186,6 +196,7 @@ iosApp/
 AI-Design/           设计与迁移文档，含分阶段迁移计划与架构图
 docs/                迁移相关的生成文档
 .github/             持续性集成：iOS 未签名 IPA 构建、模拟器截图冒烟测试，以及配套脚本
+screenshot/          本地留存的冒烟截图（不入版本库，只保留最近两次，见该目录下的 README）
 ```
 
 ## 开发重点
