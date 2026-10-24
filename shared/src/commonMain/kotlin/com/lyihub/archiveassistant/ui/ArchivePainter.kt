@@ -21,6 +21,11 @@ import juheshiyi.shared.generated.resources.home_zhongshu_tile
 import juheshiyi.shared.generated.resources.imperial_ornament_pattern
 import juheshiyi.shared.generated.resources.memorial_button_bg
 import juheshiyi.shared.generated.resources.memorial_completion_bg
+import juheshiyi.shared.generated.resources.memorial_cover_02
+import juheshiyi.shared.generated.resources.memorial_cover_03
+import juheshiyi.shared.generated.resources.memorial_cover_04
+import juheshiyi.shared.generated.resources.memorial_cover_05
+import juheshiyi.shared.generated.resources.memorial_cover_06
 import juheshiyi.shared.generated.resources.memorial_cover_corner
 import juheshiyi.shared.generated.resources.memorial_cover_pattern
 import juheshiyi.shared.generated.resources.memorial_stamp_dislike
@@ -77,6 +82,11 @@ private fun bundledDrawable(assetName: String): DrawableResource? =
     "imperial_ornament_pattern" -> Res.drawable.imperial_ornament_pattern
     "memorial_button_bg" -> Res.drawable.memorial_button_bg
     "memorial_completion_bg" -> Res.drawable.memorial_completion_bg
+    "memorial_cover_02" -> Res.drawable.memorial_cover_02
+    "memorial_cover_03" -> Res.drawable.memorial_cover_03
+    "memorial_cover_04" -> Res.drawable.memorial_cover_04
+    "memorial_cover_05" -> Res.drawable.memorial_cover_05
+    "memorial_cover_06" -> Res.drawable.memorial_cover_06
     "memorial_cover_corner" -> Res.drawable.memorial_cover_corner
     "memorial_cover_pattern" -> Res.drawable.memorial_cover_pattern
     "memorial_stamp_dislike" -> Res.drawable.memorial_stamp_dislike

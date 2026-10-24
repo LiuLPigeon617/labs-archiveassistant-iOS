@@ -172,6 +172,18 @@ internal fun folderTitleForTopicId(topicId: String): String {
   return SampleTopicTitles.getOrElse(folderIndexForTopicId(topicId)) { "尚书省" }
 }
 
+/**
+ * The bundled memorial cover pool, in the order the wheel walks it.
+ *
+ * Only the first batch is bundled: the paper pattern plus covers `02`–`06`. That is the smallest
+ * set where the six demo memorials each get a distinct cover, so the briefing wheel and the reading
+ * view look finished rather than "asset pack not done". Covers `07`–`23` stay in `:app` on purpose —
+ * they are the bulk of the artwork bytes, and the fold view that decides the final display aspect
+ * ratio has not been ported yet, so cropping them now would freeze a ratio that is about to change.
+ *
+ * Keep this list in sync with `ArchivePainter.bundledDrawable`: a name listed here but not bundled
+ * resolves to `null` and draws a 1×1 transparent placeholder, which no screenshot check can catch.
+ */
 internal val MemorialCoverAssets =
   listOf(
     "memorial_cover_pattern",
@@ -180,23 +192,6 @@ internal val MemorialCoverAssets =
     "memorial_cover_04",
     "memorial_cover_05",
     "memorial_cover_06",
-    "memorial_cover_07",
-    "memorial_cover_08",
-    "memorial_cover_09",
-    "memorial_cover_10",
-    "memorial_cover_11",
-    "memorial_cover_12",
-    "memorial_cover_13",
-    "memorial_cover_14",
-    "memorial_cover_15",
-    "memorial_cover_16",
-    "memorial_cover_17",
-    "memorial_cover_18",
-    "memorial_cover_19",
-    "memorial_cover_20",
-    "memorial_cover_21",
-    "memorial_cover_22",
-    "memorial_cover_23",
   )
 
 internal fun folderVisual(index: Int): FolderVisual = FolderVisuals[index % FolderVisuals.size]
