@@ -255,21 +255,49 @@ assert_running() {
   die "$what: the app did not start within 25s; screenshots would have shown the home screen."
 }
 
-# The pid line simctl prints proves the launch was *attempted*, not that the app survived it, so the
-# check before a screenshot trusts only the launchd job list. Without this, an app that starts and then
-# crashes is screenshotted as the springboard - colourful, and passing every pixel check.
-assert_alive() {
-  local what="$1"
+# A phase can also end with the app simply *gone*: no crash report, a console log that stops after the
+# first couple of lines, and no launchd job left. Run 40062440293 hit exactly that in the dark phase on
+# a loaded runner — the log had `iOS shared module initialized`, `crashes.txt` was empty, and nothing
+# in the run suggested a Compose fault. So one relaunch is allowed, but only when no report explains
+# the exit: a real crash still fails on the first attempt, because then the report is the finding.
+#
+# The pid line simctl prints only proves a launch was *attempted*, which is why survival is re-checked
+# through the launchd job list right before the screenshot. Without that, an app that starts and then
+# dies is screenshotted as the springboard: colourful, and passing every pixel check.
+capture_phase() { # <label> <console log> <settle seconds> <png name> [launch args...]
+  local label="$1"
   local console_log="$2"
-  if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
-    echo "$what: still running before capture."
-    return 0
-  fi
-  echo "::error::$what: the app is no longer running, so the screenshot would not have shown it."
-  xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i archive || echo "(no launchd job)"
+  local settle="$3"
+  local png="$4"
+  shift 4
+  local attempt=1
+
+  while [ "$attempt" -le 2 ]; do
+    start_app "$console_log" "$@"
+    assert_running "$label" "$console_log"
+    sleep "$settle"
+
+    if xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -q "$BUNDLE_ID"; then
+      echo "$label: still running before capture."
+      shot "$png"
+      stop_app
+      check_no_crash "$label phase" "$console_log"
+      return 0
+    fi
+
+    echo "::warning::$label: the app is no longer running after ${settle}s."
+    stop_app
+    # Dies with the report details when one exists, so the relaunch below is only reached for a
+    # termination the simulator left unexplained.
+    check_no_crash "$label phase" "$console_log"
+    [ "$attempt" -lt 2 ] || break
+    echo "::warning::$label: no crash report, so the app was dropped rather than crashed. Relaunching once."
+    attempt=$((attempt + 1))
+  done
+
   echo "=== recent console output ==="
   tail -n 40 "$console_log" 2>/dev/null || true
-  exit 1
+  die "$label: the app was gone before capture on two consecutive launches, and neither left a crash report. Screenshots would have shown the simulator home screen."
 }
 
 # Compose loads its fonts and resource pack on first composition, so the first frames are empty. The
@@ -279,34 +307,19 @@ NATIVE_SETTLE_SECONDS=8
 
 log "iPhone 1/3 native shell, light appearance"
 xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
-start_app "$ARTIFACT_DIR/console-native-shell.log"
-assert_running "native shell" "$ARTIFACT_DIR/console-native-shell.log"
-sleep "$NATIVE_SETTLE_SECONDS"
-assert_alive "native shell" "$ARTIFACT_DIR/console-native-shell.log"
-shot 01-native-shell-light.png
-stop_app
-check_no_crash "native shell phase" "$ARTIFACT_DIR/console-native-shell.log"
+capture_phase "native shell" "$ARTIFACT_DIR/console-native-shell.log" \
+  "$NATIVE_SETTLE_SECONDS" 01-native-shell-light.png
 
 log "iPhone 2/3 Compose tree, light appearance"
-start_app "$ARTIFACT_DIR/console-compose-light.log" "$PREVIEW_ARGUMENT"
-assert_running "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
-sleep "$COMPOSE_SETTLE_SECONDS"
-assert_alive "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log"
-shot 02-compose-home-light.png
-stop_app
-check_no_crash "Compose light phase" "$ARTIFACT_DIR/console-compose-light.log"
+capture_phase "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log" \
+  "$COMPOSE_SETTLE_SECONDS" 02-compose-home-light.png "$PREVIEW_ARGUMENT"
 
 # Relaunch rather than toggling appearance under a running app: this exercises the value
 # `isSystemInDarkTheme()` resolves at first composition, which is what the theme reads.
 log "iPhone 3/3 Compose tree, dark appearance"
 xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
-start_app "$ARTIFACT_DIR/console-compose-dark.log" "$PREVIEW_ARGUMENT"
-assert_running "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
-sleep "$COMPOSE_SETTLE_SECONDS"
-assert_alive "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log"
-shot 03-compose-home-dark.png
-stop_app
-check_no_crash "Compose dark phase" "$ARTIFACT_DIR/console-compose-dark.log"
+capture_phase "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log" \
+  "$COMPOSE_SETTLE_SECONDS" 03-compose-home-dark.png "$PREVIEW_ARGUMENT"
 
 log "iPhone app log (last 3 minutes)"
 xcrun simctl spawn "$UDID" log show --last 3m --style compact \
@@ -359,23 +372,14 @@ if [ "$RUN_IPAD" != "0" ]; then
   xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
 
   log "iPad 1/2 native shell, landscape"
-  start_app "$ARTIFACT_DIR/console-ipad-native-shell.log" "$LANDSCAPE_ARGUMENT"
-  assert_running "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
-  sleep "$NATIVE_SETTLE_SECONDS"
-  assert_alive "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
-  shot 04-ipad-native-shell-light.png
-  stop_app
-  check_no_crash "iPad native shell phase" "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  capture_phase "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log" \
+    "$NATIVE_SETTLE_SECONDS" 04-ipad-native-shell-light.png "$LANDSCAPE_ARGUMENT"
   assert_landscape "$ARTIFACT_DIR/04-ipad-native-shell-light.png" "iPad native shell"
 
   log "iPad 2/2 Compose tree, landscape"
-  start_app "$ARTIFACT_DIR/console-ipad-compose-light.log" "$PREVIEW_ARGUMENT" "$LANDSCAPE_ARGUMENT"
-  assert_running "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
-  sleep "$COMPOSE_SETTLE_SECONDS"
-  assert_alive "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
-  shot 05-ipad-compose-home-light.png
-  stop_app
-  check_no_crash "iPad Compose phase" "$ARTIFACT_DIR/console-ipad-compose-light.log"
+  capture_phase "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log" \
+    "$COMPOSE_SETTLE_SECONDS" 05-ipad-compose-home-light.png \
+    "$PREVIEW_ARGUMENT" "$LANDSCAPE_ARGUMENT"
   assert_landscape "$ARTIFACT_DIR/05-ipad-compose-home-light.png" "iPad Compose tree"
 
   log "iPad app log (last 3 minutes)"
