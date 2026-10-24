@@ -49,11 +49,10 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
 # is the whole reason the richer-looking numbers above are the failing ones.
 MIN_DISTINCT="${MIN_DISTINCT:-25}"
 
-# The iPad pass reuses MIN_DISTINCT. That is a deliberate under-claim rather than a calibration: the
-# numbers above were measured on a 1290x2796 iPhone capture, and an iPad capture is a different image
-# size and a different layout, so reusing the value can only err on the side of not masking a blank
-# screen. The first iPad capture is recorded in the summary, and the threshold should be re-derived
-# from it once one exists.
+# The iPad pass reuses MIN_DISTINCT, and run 39979857765 turned that from an assumption into a
+# measurement: on a 2064x2752 iPad capture the native shell came in at 81 distinct colours and the
+# Compose tree at 1177. 81 is the lowest legitimate capture this script has ever produced, so 25 keeps
+# on iPad the same headroom it already had on the 86-colour iPhone shell.
 RUN_IPAD="${RUN_IPAD:-1}"
 
 log() { echo; echo "=== $* ==="; }
@@ -322,50 +321,62 @@ wc -l < "$ARTIFACT_DIR/app-log-iphone.txt" | tr -d ' ' | sed 's/$/ lines capture
 # so the two-column layout only exists on iPad. Capturing it is the cheapest way to notice that the
 # split view or the hosting controller's orientation forwarding broke — neither shows up on a phone.
 #
-# Landscape is requested but not guaranteed: `simctl` has no rotation command at all, and whether
-# `devicectl device orientation set` exists depends on the Xcode on the runner. So the request is
-# best-effort and the *screenshot dimensions* are what actually reports the result — a 2048x2732
-# capture means the landscape request did not take, and the summary says which one was obtained.
-# Do not trust the rotation command's exit code for this: an iPad app that pins its own orientation
-# can make it a silent no-op.
+# Landscape is obtained through the app's own `--landscape` launch argument rather than a simulator
+# command. `simctl` has no rotation command at all, and the runner used for run 39979857765 had no
+# usable `devicectl device orientation` subcommand either (job log: "this Xcode's devicectl has no
+# usable 'device orientation'"), which is why that run captured a 2064x2752 portrait iPad. The
+# argument makes the app declare a landscape-only mask so UIKit sizes the window wide before the first
+# frame. Honest scope: this proves the wide layout, not user-driven rotation.
+#
+# The dimensions are asserted, not just printed. A landscape request that silently does nothing shows
+# up as a portrait-sized image, and this script has already been fooled once by a check that only
+# proved "something was drawn".
+LANDSCAPE_ARGUMENT="--landscape"
+
+image_size() { # <png> -> "WIDTHxHEIGHT", empty when unreadable
+  sips -g pixelWidth -g pixelHeight "$1" 2>/dev/null \
+    | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{ if (w != "" && h != "") print w "x" h }'
+}
+
+assert_landscape() { # <png> <label>
+  local size width height
+  size="$(image_size "$1")"
+  [ -n "$size" ] || die "could not read the pixel size of $1 (sips produced nothing), so the orientation cannot be asserted."
+  width="${size%x*}"
+  height="${size#*x}"
+  if [ "$width" -le "$height" ]; then
+    die "$2 was captured at $size. That is not landscape (width > height), so the --landscape launch argument did not take effect. The image is still in the artifact as evidence."
+  fi
+  echo "$2 is landscape ($size)."
+}
+
 if [ "$RUN_IPAD" != "0" ]; then
   prepare_device iPad '^iPad Pro' ipad
   IPAD_NAME="$DEVICE_NAME"
   IPAD_UDID="$UDID"
 
-  try_landscape() {
-    if xcrun devicectl device orientation get --device "$UDID" >/dev/null 2>&1; then
-      if xcrun devicectl device orientation set --device "$UDID" landscape >/dev/null 2>&1; then
-        echo "orientation: landscape requested via devicectl (verify via screenshot dimensions)."
-      else
-        echo "orientation: devicectl rejected the landscape request; using the runtime's orientation."
-      fi
-    else
-      echo "orientation: this Xcode's devicectl has no usable 'device orientation'; using the runtime's orientation."
-    fi
-  }
-
-  log "iPad: preparing, landscape if this Xcode supports it"
+  log "iPad: preparing, landscape via the app's $LANDSCAPE_ARGUMENT launch argument"
   xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
-  try_landscape
 
-  log "iPad 1/2 native shell, light appearance"
-  start_app "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  log "iPad 1/2 native shell, landscape"
+  start_app "$ARTIFACT_DIR/console-ipad-native-shell.log" "$LANDSCAPE_ARGUMENT"
   assert_running "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
   sleep "$NATIVE_SETTLE_SECONDS"
   assert_alive "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log"
   shot 04-ipad-native-shell-light.png
   stop_app
   check_no_crash "iPad native shell phase" "$ARTIFACT_DIR/console-ipad-native-shell.log"
+  assert_landscape "$ARTIFACT_DIR/04-ipad-native-shell-light.png" "iPad native shell"
 
-  log "iPad 2/2 Compose tree, light appearance"
-  start_app "$ARTIFACT_DIR/console-ipad-compose-light.log" "$PREVIEW_ARGUMENT"
+  log "iPad 2/2 Compose tree, landscape"
+  start_app "$ARTIFACT_DIR/console-ipad-compose-light.log" "$PREVIEW_ARGUMENT" "$LANDSCAPE_ARGUMENT"
   assert_running "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
   sleep "$COMPOSE_SETTLE_SECONDS"
   assert_alive "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log"
   shot 05-ipad-compose-home-light.png
   stop_app
   check_no_crash "iPad Compose phase" "$ARTIFACT_DIR/console-ipad-compose-light.log"
+  assert_landscape "$ARTIFACT_DIR/05-ipad-compose-home-light.png" "iPad Compose tree"
 
   log "iPad app log (last 3 minutes)"
   xcrun simctl spawn "$UDID" log show --last 3m --style compact \
@@ -407,6 +418,9 @@ done
   fi
   echo "| host arch | \`$HOST_ARCH\` |"
   echo "| launch argument | \`$PREVIEW_ARGUMENT\` |"
+  if [ -n "$IPAD_NAME" ]; then
+    echo "| iPad launch argument | \`$LANDSCAPE_ARGUMENT\` (asserted, not best-effort) |"
+  fi
   echo "| screenshots | $SHOT_COUNT |"
   echo "| crash reports | none |"
   echo
@@ -414,9 +428,9 @@ done
   echo "only proves content was drawn - it cannot tell a correct layout from a broken one, so the"
   echo "images themselves are the real output."
   echo
-  echo "The capture dimensions printed below are also the only honest record of the iPad orientation:"
-  echo "a landscape request that silently did nothing shows up as a portrait-sized image, not as an"
-  echo "error."
+  echo "The capture dimensions printed below are the record of iPad orientation, and the run asserts"
+  echo "width > height for both iPad images: a landscape request that silently did nothing used to pass"
+  echo "quietly as a portrait image, which is exactly how run 39979857765 shipped a 2064x2752 iPad."
   echo
   echo '```'
   cat "$ARTIFACT_DIR/screenshot-checks.txt"

@@ -3,15 +3,26 @@ import SwiftUI
 /// Launch-time switches used by the CI simulator smoke test.
 ///
 /// These exist because `xcrun simctl launch` can pass arguments but cannot tap a toolbar button, so a
-/// screenshot of the migrated Compose tree would otherwise need a UI-automation target. Acting on
-/// these flags is the whole of their effect — they do not change what the app renders, only where it
-/// starts.
+/// screenshot of the migrated Compose tree would otherwise need a UI-automation target. Nothing in
+/// the product reads them; they only exist so the smoke test can reach a state it cannot reach by
+/// tapping.
 enum LaunchOptions {
   /// Open the shared Compose tree immediately instead of the two-column shell.
   ///
-  /// Used by `.github/scripts/simulator-smoke.sh` to capture the migrated settings pane, and usable
-  /// by hand: `xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview`.
+  /// Used by `.github/scripts/simulator-smoke.sh` to capture the migrated dashboard, and usable by
+  /// hand: `xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview`.
   static let opensComposePreview = ProcessInfo.processInfo.arguments.contains("--compose-preview")
+
+  /// Pin the app to a landscape mask so the iPad pass captures a wide layout.
+  ///
+  /// Unlike the flag above this does change the rendered layout, and that is the point: `simctl` has
+  /// no rotation command, and the runner used for run 39979857765 had no usable `devicectl device
+  /// orientation` subcommand either, so the iPad was only ever captured in portrait. Declaring a
+  /// landscape-only mask makes UIKit size the window wide before the first frame.
+  ///
+  /// Honest scope: this verifies the wide layout, not user-driven rotation. The smoke test asserts
+  /// the resulting pixel dimensions, so a request that silently does nothing fails the run.
+  static let forcesLandscape = ProcessInfo.processInfo.arguments.contains("--landscape")
 }
 
 /// iPad-first shell: a two-column split view. On iPhone this collapses to a single navigation stack

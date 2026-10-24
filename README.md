@@ -36,9 +36,10 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是详情页还没迁入共享内核。
 - 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与奏折简报页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接；首页已在 `shared/.../ui/screens/HomePane.kt` 完成迁移。
 - 首页迁移后的三个已知限制：设置按钮与搜索清空按钮是本地 Canvas 绘制的近似字形（模块不依赖 Material Icons），不是原始矢量图标；iOS 上的实际渲染只有截图冒烟测试覆盖，且截图只捕获首帧，点击 tile 之后的行为不在覆盖范围内；首页「新建/改名/删除」三个按钮点了没反应，因为共享 store 的 `openCreateTopicDialog()` / `openRenameTopicDialog()` 会直接把对话框模式置空并给出 `TOPIC_CRUD_DISABLED_MESSAGE`（与「六部分类当前固定」一致），这不是本次迁移引入的缺陷。
-- 10 个 XML vector drawable 在 iOS 上尚无人眼确认：首页的 5 个纹饰与 6 个文件夹底纹是 Android 格式的 `<vector>` XML，Compose Multiplatform 文档支持该格式，文件也已过「无 Android 外部引用」检查，但 `archivePainterOrPlaceholder` 对解析失败的名字会静默返回 1×1 透明图——也就是说即使全都没画出来，截图冒烟的像素检查照样通过。这一条只能靠人看截图确认。
+- 10 个 XML vector drawable 在 iOS 上**已确认能渲染**：run 39979857765 的 iPad 截图里能直接看到 6 个文件夹底纹与 `home_ornament_library_11092` 纹饰。这一条当初必须靠人眼看图才能关闭，因为 `archivePainterOrPlaceholder` 对解析失败的名字会静默返回 1×1 透明图，即使全都没画出来，像素检查照样通过。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。
-- iOS 无法在本机构建验证，且截图覆盖不完整：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，iOS 编译、Swift 侧代码与界面渲染目前全部由持续集成验证。截图冒烟测试只在 iPhone 运行时上运行，iPad、横屏以及首次呈现之后的任何交互都不在覆盖范围内；其像素检查也只能发现「画面空白或纯色」，无法判断布局是否正确，因此仍需人工看图。
+- iOS 无法在本机构建验证：iOS 目标需要 macOS 与 Xcode，本地只能验证 `desktop` 目标，iOS 编译、Swift 侧代码与界面渲染目前全部由持续集成验证。
+- 截图冒烟测试覆盖 iPhone 与 iPad，横屏靠 App 的 `--landscape` 调试参数获得（`simctl` 与 runner 上的 `devicectl` 都无法旋转模拟器），脚本会断言 iPad 截图宽大于高，所以横屏没生效会直接失败而不是悄悄交出竖屏图；但截图只捕获首帧，首次呈现之后的任何交互仍不在覆盖范围内，像素检查也只能发现「画面空白或纯色」，无法判断布局是否正确，因此仍需人工看图。
 - JVM 目标命名容易踩坑：本分支的 JVM 目标名为 `desktop`（`shared/build.gradle.kts` 中为 `jvm("desktop")`），对应的任务是 `compileKotlinDesktop` 与 `desktopTest`，不存在 `compileKotlinJvm` 或 `jvmTest`；引用错的名称会让构建在任务解析阶段直接失败。
 - 本地模型文件选择尚未接通：设置页的「选择模型文件」按钮已绘出，但在 Compose 根组件中被刻意置空，因为还缺少原生文件选择器；点击不会有任何反应。
 - AI 三省六部推荐尚未实现：当前项目有 AI 归纳与分类提示词基础，但还没有完成面向“三省六部”体系的自动推荐、排序或决策流。不要把现有智能归纳视为完整推荐系统。

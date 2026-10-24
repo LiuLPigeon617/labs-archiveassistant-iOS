@@ -376,20 +376,45 @@ drawables actually cost — 12,917,432 bytes of TTF plus ~1.48 MB of drawables, 
 `compose-resources`. So "the fonts dominate the IPA" only becomes true once they are genuinely packaged,
 which is exactly what this section had to fix first.
 
-**Not covered yet:** iPad, landscape, and any interaction past first presentation. The workflow builds
-for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only, so the iPad layout
-— the reason `NavigationSplitView` and the orientation forwarding in the hosting controller exist — is
-still unverified. A screenshot of a pane is also not a test that the pane *works*: the capture is the
-first frame, so tapping through the dashboard's tiles is still out of scope.
+**iPad is covered now; landscape is the last piece.** Run 39979857765 (`4bf22f2`) boots an
+`iPad Pro 13-inch (M4)` after the iPhone pass and captures two more images, so the five screenshots are
+`01`/`02`/`03` on `iPhone 16 Plus` (1290x2796) and `04`/`05` on iPad (2064x2752). Pixel counts from that
+run:
 
-One specific gap inside the current coverage: **the XML vector drawables have never been confirmed to
-render on iOS.** Five of the `HomePane` ornaments and the six `tsieina_department_pattern_*` folder
-patterns are Android-format `<vector>` XML. Compose Multiplatform documents support for that format
-(`painterResource` returns a `VectorPainter`), and all ten files pass the "no external Android resource
-references" restriction, but the only proof so far is that the compile and the pixel check pass.
-`archivePainterOrPlaceholder` returns a 1×1 transparent painter for an asset it cannot resolve, so a
-parse failure in `:shared` would draw nothing and still sail through `check-screenshot.swift`. Confirming
-this needs a human looking at the capture, not a green job.
+| capture | dimensions | distinct colours | mean luminance |
+|---|---|---|---|
+| `01-native-shell-light` | 1290x2796 | 86 | 237.6 |
+| `02-compose-home-light` | 1290x2796 | 1153 | 202.8 |
+| `03-compose-home-dark` | 1290x2796 | 1154 | 111.2 |
+| `04-ipad-native-shell-light` | 2064x2752 | 81 | 241.4 |
+| `05-ipad-compose-home-light` | 2064x2752 | 1177 | 172.6 |
+
+81 is the lowest legitimate capture the script has ever produced, so `MIN_DISTINCT = 25` now has
+measured headroom on iPad rather than an assumed one.
+
+**That run was still portrait**, and the reason is worth recording because it cost a whole CI cycle to
+see: `simctl` has no rotation command at all, and the runner's `devicectl` had no usable
+`device orientation` subcommand — the job log says so in as many words (*this Xcode's devicectl has no
+usable 'device orientation'; using the runtime's orientation*) while still passing, because a portrait
+capture satisfies a check that only proves "something was drawn". The fix is an app-side debug hook:
+`--landscape` (see `LaunchOptions.forcesLandscape`) makes `AppDelegate` return a landscape-only mask and
+`ArchiveComposeHostingViewController` agree with it, so UIKit sizes the window wide before the first
+frame. The script then **asserts width > height** for both iPad images, turning a silent no-op into a
+hard failure. Honest scope: this verifies the wide layout, not user-driven rotation, and it is a debug
+flag — nothing in the product reads it.
+
+**Still not covered:** any interaction past first presentation. A screenshot of a pane is not a test
+that the pane *works*: the capture is the first frame, so tapping through the dashboard's tiles is
+still out of scope.
+
+One gap that is now closed: **the XML vector drawables do render on iOS.** Five of the `HomePane`
+ornaments and the six `tsieina_department_pattern_*` folder patterns are Android-format `<vector>` XML.
+Compose Multiplatform documents support for that format (`painterResource` returns a `VectorPainter`),
+all ten files pass the "no external Android resource references" restriction — and the iPad capture from
+run 39979857765 shows the folder pattern marks and the `home_ornament_library_11092` mask drawn on the
+dashboard. This mattered because `archivePainterOrPlaceholder` returns a 1×1 transparent painter for an
+asset it cannot resolve, so a parse failure would draw nothing and still sail through
+`check-screenshot.swift`. It needed a human looking at the capture, and now it has had one.
 
 ### Kotlin/Swift interop notes
 
@@ -769,10 +794,11 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 8. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 10. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
-11. Widen the simulator smoke test beyond one iPhone portrait runtime: boot an iPad runtime and
-    capture landscape too. The project builds for `TARGETED_DEVICE_FAMILY = "1,2"` and the hosting
-    controller forwards orientation changes, so the two-column layout is exactly the thing the current
-    coverage cannot see. Cheap to add — the script already parameterises the device and appearance.
+11. Finish the landscape half of the smoke test. The iPad pass landed in `4bf22f2` (run 39979857765,
+    five screenshots, see the capture table above) but captured portrait, because neither `simctl` nor
+    the runner's `devicectl` can rotate a simulator. `--landscape` + `assert_landscape` are in place and
+    unverified; the next run is what confirms or refutes that the AppDelegate mask is enough. If it is
+    not, the fallback is an `XCUITest` target that sets `XCUIDevice.shared.orientation`.
 
 ### Artwork size: the remainder is not a free move
 
