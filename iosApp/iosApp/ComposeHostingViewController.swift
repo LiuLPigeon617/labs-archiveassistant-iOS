@@ -46,11 +46,7 @@ final class ArchiveComposeHostingViewController: UIViewController {
   }
 
   override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
-    // The smoke test's `--landscape` flag wins here too. The app delegate already narrows the mask,
-    // but a presented controller that reports a wider set can bring the window back to portrait, so
-    // both layers have to agree. Without the flag this stays a pure forward to the Compose child.
-    if LaunchOptions.forcesLandscape { return .landscape }
-    return compose.supportedInterfaceOrientations
+    compose.supportedInterfaceOrientations
   }
 
   override var shouldAutorotate: Bool {
