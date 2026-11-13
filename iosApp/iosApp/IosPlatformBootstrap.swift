@@ -57,8 +57,10 @@ enum IosPlatformBootstrap {
 
     // The picker has to be presented by a view controller, which Kotlin/Native cannot reach, so the
     // presentation and the security-scope handling live in IosDocumentPickerHost.
+    // Kotlin declares the callback as (String?) -> Unit, which Swift imports as (String?) -> KotlinUnit,
+    // so it cannot be handed to the picker host's (String?) -> Void parameter directly; drop the value.
     bridge.pickFile = { extensions, callback in
-      IosDocumentPickerHost.shared.present(allowedExtensions: extensions, onPicked: callback)
+      IosDocumentPickerHost.shared.present(allowedExtensions: extensions, onPicked: { path in _ = callback(path) })
     }
   }
 }

@@ -145,6 +145,27 @@ homepage dashboard; see the pixel table further down. The previous milestone was
 one was **run 37199938026 on `135d2f2`**, the first run whose Compose root compiled and archived (15 steps
 plus 4 post steps, 11 minutes). Before `10a44a8` the workflow had **never** passed.
 
+**As of 2026-11-14 the pipeline is red again, for two real and unrelated reasons** — and this
+paragraph exists so nobody re-diagnoses them from scratch. Run 43503533031 (`ccf9f42`) got a macOS
+machine and failed both jobs in genuinely different places:
+
+| job | failing step | cause |
+|---|---|---|
+| `Build unsigned IPA` | `Build unsigned .app` | Swift: `cannot convert value of type '(String?) -> KotlinUnit' to expected argument type '(String?) -> Void'` at `IosPlatformBootstrap.swift:61` |
+| `Simulator smoke` | `Build and stage SharedKit.xcframework` | `java.lang.OutOfMemoryError: Java heap space` during `:shared:linkReleaseFrameworkIosArm64` |
+
+Both are fixed in the commit that carries this note. The Swift one wraps the Kotlin callback
+(`onPicked: { path in _ = callback(path) }`); the memory one sets `kotlin.native.jvmArgs=-Xmx4g`,
+because the plugin's default for that forked compiler JVM is `-Xmx3g` regardless of
+`org.gradle.jvmargs`. Both traps are described in full under "Tooling pitfalls encountered".
+
+A third failure mode is worth separating from these: **runs 43457410158, 43467875982 and
+43474940729 were cancelled, not failed.** Their only annotation is `The job was not acquired by
+Runner of type hosted even after multiple attempts` plus `Due to capacity constraints, jobs
+targeting macOS arm64 runners may experience longer queue times`; each job sat queued ~15 minutes
+and was cancelled without ever starting a step. Re-dispatch with
+`gh workflow run ios-build.yml --ref <branch>` rather than hunting a code defect in those runs.
+
 One operational caveat learned the hard way: **this repository's artifact retention is short** — the
 screenshots from run 37300716982 were already gone (`Artifact has expired`, HTTP 410) when inspected on
 2026-10-23, 18 days later. The pixel statistics survive only in that run's job log; if a capture needs to
@@ -1090,4 +1111,25 @@ from the 1440x900 screenshot.
   in the job log, but only because the listing was dumped before the parse ran — that dump is what
   turned "the parse produced nothing" into a two-minute diagnosis instead of a guess. A `head`-ed dump
   would have hidden the newest runtime's lines and made the same bug look like a environment problem.
+- **A Kotlin function type returning `Unit` does not import into Swift as a `Void`-returning closure.**
+  `(String?) -> Unit` becomes `(String?) -> KotlinUnit`, so handing it straight to a Swift API that
+  declares `@escaping (String?) -> Void` fails to compile with `cannot convert value of type
+  '(String?) -> KotlinUnit' to expected argument type '(String?) -> Void'`. Wrap it at the boundary and
+  discard the value: `onPicked: { path in _ = callback(path) }`. Changing the Swift signature to
+  `-> KotlinUnit` instead drags a Kotlin type into the pure-Swift file and forces `_ =` on every call
+  site there.
+- **Xcode project object IDs are unique keys, not a sequence.** `project.pbxproj` looks like
+  `AAAAAAAAAAAAAAAAAAAA0108`; adding a file by copying a neighbouring line and incrementing the
+  suffix produced a duplicate ID shared with `AppDelegate.swift`, and one `PBXFileReference` then
+  referred to two files. Pick an ID that the file nowhere defines; the check is cheap and needs no
+  Xcode: collect every `^\t\t([A-Z0-9]{24})` definition line and look for repeats plus brace balance.
+- **The Kotlin/Native compiler runs in its own JVM, and the plugin silently adds `-Xmx3g`.** The
+  Gradle daemon's `org.gradle.jvmargs` does not reach it. KGP 2.2.21 reads `kotlin.native.jvmArgs`
+  (deprecated alias `org.jetbrains.kotlin.native.jvmArgs`, split on whitespace) and, in
+  `ToolSpec.configureDefaultMaxHeapSize`, appends `-Xmx3g` only when no supplied arg starts with
+  `-Xmx`. That 3 GB is not enough for the release framework link: LTO's devirtualization analysis
+  died with `java.lang.OutOfMemoryError: Java heap space` at
+  `DevirtualizationAnalysis.buildConstraintGraphPrecursor` after 11 minutes, while the *debug*
+  framework linked fine — the failure is in the release path only. Set `kotlin.native.jvmArgs=-Xmx4g`
+  in `gradle.properties` and be aware this is a runner-memory trade, not a code fix.
 
