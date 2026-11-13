@@ -236,7 +236,7 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 ```
 
 **What the pixel check does and does not prove.** `.github/scripts/check-screenshot.swift` decodes each
-PNG, quantises colours to 5 bits per channel and fails if fewer than 25 distinct colours appear. The
+PNG, quantises colours to 5 bits per channel and fails if fewer than a per-device minimum appears. The
 threshold is calibrated against real captures rather than guessed — measured with the same sampling and
 quantisation the script uses, on run 37203635522 (where every Compose launch crashed) and run 37214783385
 (the first run where Compose actually rendered):
@@ -244,13 +244,22 @@ quantisation the script uses, on run 37203635522 (where every Compose launch cra
 | capture | distinct colours | source |
 |---|---|---|
 | genuinely blank screen | 1–3 | — |
-| native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
+| iPhone native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
 | Compose settings pane, light (the pane the preview opened on then) | **167** | 37214783385 |
 | Compose settings pane, dark (same) | **154** | 37214783385 |
+| iPad native shell, light | **81** | 39979857765 |
+| iPad Compose home, light | **1177** | 39979857765 |
 | springboard fallback after a crash | **2663 / 2822** | 37203635522 |
 
 The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
-sparse native shell comfortable room while still sitting far above a blank screen. Note the last row: a
+sparse native shell comfortable room while still sitting far above a blank screen.
+
+The iPad capture made the *shared* threshold untenable rather than merely unproven. Its native shell
+measures **81**, five colours below the iPhone's 86, so one value cannot be calibrated against both
+floors. The script therefore carries two: **25 for the iPhone captures**, unchanged and still 3.4× the
+86 floor, and **20 for the iPad captures** (81 / 4 = 20.25, rounded down), which keeps the same order
+of headroom while staying ~7× above a blank screen's 3. The threshold follows the capture's file name
+(`01`–`03` iPhone, `04`–`05` iPad), and `MIN_DISTINCT` still overrides both for a one-off run. Note the last row: a
 crashed app's screenshot is *the most colourful image of the five*, so this check cannot detect the
 failure that matters most. It catches exactly one thing — a blank, flat or unmounted screen — and will
 happily pass a screen that is wrong in every other way. Read the images; the check exists so that an
@@ -376,11 +385,20 @@ drawables actually cost — 12,917,432 bytes of TTF plus ~1.48 MB of drawables, 
 `compose-resources`. So "the fonts dominate the IPA" only becomes true once they are genuinely packaged,
 which is exactly what this section had to fix first.
 
-**Not covered yet:** iPad, landscape, and any interaction past first presentation. The workflow builds
-for `TARGETED_DEVICE_FAMILY = "1,2"` but the script boots an iPhone runtime only, so the iPad layout
-— the reason `NavigationSplitView` and the orientation forwarding in the hosting controller exist — is
-still unverified. A screenshot of a pane is also not a test that the pane *works*: the capture is the
-first frame, so tapping through the dashboard's tiles is still out of scope.
+**iPad is covered now; landscape is not, and will not be by this script.** The iPad pass boots an
+`iPad Pro` runtime and captures its native shell and Compose tree (run 39979857765: 2064x2752, 81 and
+1177 distinct colours), so the `NavigationSplitView` layout — the reason `TARGETED_DEVICE_FAMILY` is
+`"1,2"` — is finally on screen in CI.
+
+Landscape is *not* covered and the three obvious routes are dead ends rather than untried options:
+`simctl` has no rotation command, the app's own orientation mask is ignored on iPadOS' resizable-window
+model, and `devicectl` has no orientation subcommand. Run 40064146914 proved the second one the
+expensive way — with a landscape-only mask the iPad still produced a 2064x2752 portrait image. Rotating
+through `XCUIDevice.shared` requires a UI-test target, so it waits on a separate branch. The commit
+that tried landscape lived on this branch and was reverted (`6993db2`).
+
+A screenshot of a pane is also not a test that the pane *works*: the capture is the first frame, so
+tapping through the dashboard's tiles is still out of scope.
 
 One specific gap inside the current coverage: **the XML vector drawables have never been confirmed to
 render on iOS.** Five of the `HomePane` ornaments and the six `tsieina_department_pattern_*` folder
@@ -769,10 +787,14 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 8. Port `ModelDownloadManager` (interface exists; the 513-line OkHttp implementation does not).
 9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 10. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
-11. Widen the simulator smoke test beyond one iPhone portrait runtime: boot an iPad runtime and
-    capture landscape too. The project builds for `TARGETED_DEVICE_FAMILY = "1,2"` and the hosting
-    controller forwards orientation changes, so the two-column layout is exactly the thing the current
-    coverage cannot see. Cheap to add — the script already parameterises the device and appearance.
+11. ~~Widen the simulator smoke test beyond one iPhone portrait runtime.~~ **iPad done in `39979857765`,
+    thresholds calibrated from that run's captures in `6993db2`'s successor:** the script boots an
+    `iPad Pro` runtime, captures `04-ipad-native-shell-light.png` and `05-ipad-compose-home-light.png`,
+    and now checks each device against its own floor (`MIN_DISTINCT`: iPhone 25 / iPad 20 — the two
+    native shells measure 86 and 81, so a shared value could not be honest for both).
+    **Landscape stays out**, for the reasons in *Tooling pitfalls*: no `simctl` rotation, the app mask
+    ignored by iPadOS window resizing, no `devicectl` orientation subcommand. It needs a UI-test target
+    on a separate branch.
 
 ### Artwork size: the remainder is not a free move
 

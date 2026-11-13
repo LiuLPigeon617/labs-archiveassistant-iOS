@@ -22,7 +22,9 @@
 # Inputs (environment):
 #   APP_PATH       path to the built .app (default: the Debug-iphonesimulator product)
 #   ARTIFACT_DIR   where screenshots and logs land (default: build/simulator-smoke)
-#   MIN_DISTINCT   minimum distinct colours for a screenshot to count as rendered (default: 25)
+#   MIN_DISTINCT   override the per-device minimum distinct colours below, for BOTH devices
+#   IPHONE_MIN_DISTINCT  iPhone threshold (default: 25, calibrated on 1290x2796 captures)
+#   IPAD_MIN_DISTINCT    iPad threshold   (default: 20, calibrated on 2064x2752 captures)
 #   RUN_IPAD       0 to skip the iPad pass (default: 1)
 #
 # Output: PNG screenshots, console/log captures, screenshot-checks.txt, summary.md in ARTIFACT_DIR.
@@ -35,25 +37,32 @@ PREVIEW_ARGUMENT="--compose-preview"
 
 APP_PATH="${APP_PATH:-build/SimDerivedData/Build/Products/Debug-iphonesimulator/${PRODUCT_NAME}.app}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
-# Calibrated against real captures (measured at 4-pixel sampling, 5-bit colour quantisation, exactly
-# what check-screenshot.swift computes):
-#   native SwiftUI shell     86 distinct colours
-#   Compose tree, light     167
-#   Compose tree, dark      154
-#   springboard fallback   2663 / 2822   <- a crashed app passes ANY threshold, which is why crashes
-#                                           are detected separately rather than by this check
-# A genuinely blank screen sits at 1-3. The threshold is deliberately far from 86: the sparse native
-# shell is legitimate content and must not sit one shade away from failing.
+# Thresholds are calibrated per device against real captures, measured at 4-pixel sampling with 5-bit
+# per-channel colour quantisation — exactly what check-screenshot.swift computes:
 #
-# Note that the springboard is the *colour-rich* failure: it must never be mistaken for success, which
-# is the whole reason the richer-looking numbers above are the failing ones.
-MIN_DISTINCT="${MIN_DISTINCT:-25}"
-
-# The iPad pass reuses MIN_DISTINCT. That is a deliberate under-claim rather than a calibration: the
-# numbers above were measured on a 1290x2796 iPhone capture, and an iPad capture is a different image
-# size and a different layout, so reusing the value can only err on the side of not masking a blank
-# screen. The first iPad capture is recorded in the summary, and the threshold should be re-derived
-# from it once one exists.
+#   iPhone 16 Plus, 1290x2796 (run 39979857765)
+#     native SwiftUI shell                 86 distinct colours   <- the floor for this device
+#     Compose home, light / dark    1153 / 1154                  (settings era: 167 / 154)
+#   iPad Pro 13-inch (M4), 2064x2752 (run 39979857765)
+#     native shell, light                  81 distinct colours   <- the floor here, and 5 BELOW the iPhone's
+#     Compose home, light                1177
+#   springboard fallback (either device)  2663 / 2822           <- a crashed app passes ANY threshold,
+#                                                                  which is why crashes are detected by
+#                                                                  crashes.txt and not by this check
+#   genuinely blank screen (either device) 1-3
+#
+# The springboard is the *colour-rich* failure: it must never be mistaken for success, which is the
+# whole reason the richer-looking numbers above are the failing ones.
+#
+# The two floors are not equal, so the two devices get their own threshold rather than sharing one:
+#   iPhone  25 — deliberately far from 86, so a sparse shell does not sit one shade away from failing.
+#   iPad    20 — 81 / 4 = 20.25, rounded down. That keeps the same order of headroom over the sparse
+#                shell that the iPhone value does (86 / 25 = 3.44), and stays ~7x above a blank
+#                screen's 3. Reusing 25 on the iPad was an under-claim no measurement ever backed;
+#                the first iPad capture showed the floors are not even equal.
+MIN_DISTINCT_OVERRIDE="${MIN_DISTINCT:-}"
+IPHONE_MIN_DISTINCT="${IPHONE_MIN_DISTINCT:-${MIN_DISTINCT_OVERRIDE:-25}}"
+IPAD_MIN_DISTINCT="${IPAD_MIN_DISTINCT:-${MIN_DISTINCT_OVERRIDE:-20}}"
 RUN_IPAD="${RUN_IPAD:-1}"
 
 log() { echo; echo "=== $* ==="; }
@@ -368,14 +377,26 @@ echo "no crash reports for $BUNDLE_ID in any phase."
 # Blank-screen check
 # ---------------------------------------------------------------------------------------------------
 
-log "screenshot pixel checks (minimum $MIN_DISTINCT distinct colours)"
+# Captures 01-03 come from the iPhone runtime, 04-05 from the iPad one, so the threshold follows the
+# file name. The two floors differ (86 vs 81 distinct colours), and a single shared value would either
+# over-claim on the iPad or under-claim on the iPhone.
+threshold_for() {
+  case "$(basename "$1")" in
+    0[45]-*) echo "$IPAD_MIN_DISTINCT" ;;
+    *) echo "$IPHONE_MIN_DISTINCT" ;;
+  esac
+}
+
+log "screenshot pixel checks (iPhone >= $IPHONE_MIN_DISTINCT, iPad >= $IPAD_MIN_DISTINCT distinct colours)"
 : > "$ARTIFACT_DIR/screenshot-checks.txt"
 FAILED=0
 SHOT_COUNT=0
 for png in "$ARTIFACT_DIR"/*.png; do
   [ -e "$png" ] || die "no screenshots were captured at all."
   SHOT_COUNT=$((SHOT_COUNT + 1))
-  swift .github/scripts/check-screenshot.swift "$png" "$MIN_DISTINCT" 2>&1 \
+  SHOT_MINIMUM="$(threshold_for "$png")"
+  echo "-- $(basename "$png") minimum: $SHOT_MINIMUM" >> "$ARTIFACT_DIR/screenshot-checks.txt"
+  swift .github/scripts/check-screenshot.swift "$png" "$SHOT_MINIMUM" 2>&1 \
     | tee -a "$ARTIFACT_DIR/screenshot-checks.txt" || FAILED=1
 done
 
@@ -403,9 +424,10 @@ done
   echo "only proves content was drawn - it cannot tell a correct layout from a broken one, so the"
   echo "images themselves are the real output."
   echo
-  echo "The capture dimensions printed below are also the only honest record of the iPad orientation:"
-  echo "a landscape request that silently did nothing shows up as a portrait-sized image, not as an"
-  echo "error."
+  echo "Thresholds are per device (iPhone >= $IPHONE_MIN_DISTINCT, iPad >= $IPAD_MIN_DISTINCT distinct"
+  echo "colours), because the two native shells do not measure the same: 86 on a 1290x2796 iPhone capture"
+  echo "against 81 on a 2064x2752 iPad one. Both are far above the 1-3 of a blank screen and far below"
+  echo "the 1153-1177 of the Compose dashboard."
   echo
   echo '```'
   cat "$ARTIFACT_DIR/screenshot-checks.txt"
