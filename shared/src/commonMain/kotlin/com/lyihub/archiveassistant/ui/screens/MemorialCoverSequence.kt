@@ -6,12 +6,12 @@ import kotlin.math.min
 import kotlin.random.Random
 
 internal object MemorialCoverSequence {
-  fun wheelResources(
-    coverResources: List<Int>,
+  fun <T> wheelResources(
+    coverResources: List<T>,
     itemCount: Int,
     duplicateGuard: Int,
     seed: Int,
-  ): List<Int> {
+  ): List<T> {
     if (coverResources.isEmpty()) return emptyList()
     val uniqueResources = coverResources.distinct()
     val guard = min(duplicateGuard, (uniqueResources.size - 1).coerceAtLeast(0))
@@ -35,12 +35,12 @@ internal object MemorialCoverSequence {
     return positiveMod(sequenceIndex, generatedTextureCount)
   }
 
-  private fun greedyCircularFallback(
-    resources: List<Int>,
+  private fun <T> greedyCircularFallback(
+    resources: List<T>,
     itemCount: Int,
     guard: Int,
-  ): List<Int> {
-    val sequence = mutableListOf<Int>()
+  ): List<T> {
+    val sequence = mutableListOf<T>()
     repeat(itemCount) { index ->
       val candidate =
         resources
@@ -84,8 +84,8 @@ internal object MemorialCoverSequence {
     return if (b == 0) abs(a) else gcd(b, a % b)
   }
 
-  private fun canSwapWithoutNearDuplicate(
-    sequence: List<Int>,
+  private fun <T> canSwapWithoutNearDuplicate(
+    sequence: List<T>,
     firstIndex: Int,
     secondIndex: Int,
     guard: Int,
@@ -98,14 +98,14 @@ internal object MemorialCoverSequence {
       isCircularSequenceValidAt(mutable, secondIndex, guard)
   }
 
-  private fun isCircularSequenceValid(sequence: List<Int>, guard: Int): Boolean {
+  private fun <T> isCircularSequenceValid(sequence: List<T>, guard: Int): Boolean {
     if (sequence.isEmpty()) return true
     return sequence.indices.all { index ->
       isCircularSequenceValidAt(sequence, index, guard)
     }
   }
 
-  private fun isCircularSequenceValidAt(sequence: List<Int>, index: Int, guard: Int): Boolean {
+  private fun <T> isCircularSequenceValidAt(sequence: List<T>, index: Int, guard: Int): Boolean {
     if (sequence.isEmpty()) return true
     return (1..guard).all { distance ->
       sequence[index] != sequence[(index + distance) % sequence.size] &&

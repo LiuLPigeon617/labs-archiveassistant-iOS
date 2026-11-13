@@ -426,16 +426,16 @@ Byte payloads cross the boundary as Base64 strings rather than `ByteArray`, beca
 
 ### Done (compiles green)
 
-`./gradlew :shared:compileKotlinDesktop :shared:desktopTest` passes. 23 files now live in
+`./gradlew :shared:compileKotlinDesktop :shared:desktopTest` passes. 25 files now live in
 `shared/src/commonMain/.../ui/`:
 
-- `theme/`: Color, ImperialPalette, ImperialFonts
+- `theme/`: Color, ImperialFonts, ImperialPalette, Theme
 - `components/`: ActionButton, ArchiveChip, ArchiveDialog, ArchiveNoticeBanner, HeaderBackButton,
   PaneContainer, PaneHeader, XuanPaperBackground
 - `layout/`: LayoutMode
-- `screens/`: ArchiveVisuals, MemorialCoverSequence, MemorialStackGeometry, PaneHeroHeader,
-  SettingsPane, TagVisuals, TopicManagementDialogs
-- root: ArchivePainter, ArchiveFont (the two expect/actual seams)
+- `screens/`: ArchiveVisuals, HomePane, MemorialBriefingPane, MemorialCoverSequence,
+  MemorialStackGeometry, PaneHeroHeader, SettingsPane, TagVisuals, TopicManagementDialogs
+- root: ArchiveAssistantRoot (the composition root), ArchivePainter, ArchiveFont (the two seam objects)
 
 ### Verification target
 
@@ -505,14 +505,13 @@ iOS compile. Two cheap pre-flight checks, both required:
 
 ### Remaining portable screens, and the strategy required
 
-Still in `:app`: `MemorialBriefingPane.kt` (805 lines). `HomePane.kt` (1493 lines) was migrated this way
-and is now `shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/HomePane.kt`; see the
-HomePane section below for what the port touched.
+Nothing is left in `:app` that is convertible this way. `HomePane.kt` (1493 lines) and
+`MemorialBriefingPane.kt` (805 lines) both went through it and now live in
+`shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/`; see their sections below.
 
-Both were attempted earlier and reverted, because they thread Android `R.drawable` **`Int` resource ids**
-through many private helper composables. Converting them incrementally leaves the module
-uncompilable and produces half-converted files. `MemorialBriefingPane` is the better next target:
-10 `painterResource` sites, one `List<Int>` cover list, two legacy fonts.
+Both were originally attempted and reverted, because they thread Android `R.drawable` **`Int` resource
+ids** through many private helper composables. Converting them incrementally leaves the module
+uncompilable and produces half-converted files, which is why the pass has to be atomic.
 
 **Required strategy — do this as one atomic pass per file:**
 
@@ -556,9 +555,10 @@ needs real platform abstractions (image decoding, a file/document picker, conten
 materialization) before any conversion, so it is a work item of its own rather than a fifth atomic
 pass.
 
-Net: **two** screens remain convertible, not four. That is a scope reduction of ~1500 lines against
-what this document previously implied. One of the two, `HomePane`, has since been migrated — see the
-HomePane section.
+Net: **two** screens *were* convertible, not four — a scope reduction of ~1500 lines against what this
+document previously implied. Both have since been migrated: `HomePane` and `MemorialBriefingPane`.
+**The atomic-pass list is now empty.** Everything left is either the memorial reader's Canvas refactor
+(remaining work #3) or `DetailPane`, which needs platform abstractions before any conversion.
 
 ### `HomePane` migrated (compiles and renders green)
 
@@ -613,6 +613,50 @@ and `openRenameTopicDialog()` set `topicNameDialogMode = null` and `topicValidat
 TOPIC_CRUD_DISABLED_MESSAGE`, so `TopicManagementDialogs` never opens. That matches the README's "六部分类
 当前固定", but it means a reviewer poking at the migrated homepage should not read the dead buttons as a
 migration defect.
+
+### `MemorialBriefingPane` migrated (compiles green, not yet seen on screen)
+
+`app/src/main/java/com/lyihub/archiveassistant/ui/screens/MemorialBriefingPane.kt` (805 lines) is now
+`shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/MemorialBriefingPane.kt`
+(~841 lines). The public composable signature is **unchanged** — same parameter names, same order,
+same defaults — so the Android host's call site at `ArchiveAssistantApp.kt:608-625` would compile
+against either copy.
+
+The atomic pass, applied in full, with the two judgement calls that were *not* mechanical:
+
+| Android | shared |
+|---|---|
+| `@param:DrawableRes departmentImageRes: Int` + `painterResource(id = R.drawable.X)` | `departmentImageAsset: String` + `archivePainterOrPlaceholder("X")` |
+| `MemorialCoverResources: List<Int>` (23 entries in `ArchiveVisuals.kt`) | `MemorialCoverAssets: List<String>` (6 entries) |
+| `ImperialStampTitleFont` / `ImperialDisplayFont` | `LocalImperialFonts.current.title` / `.display` |
+| `Icons.AutoMirrored.Filled.ArrowBack` (via `PaneHeroHeader`'s default) | locally drawn `BackArrowGlyph` |
+| `Math.toRadians(degrees.toDouble())` | `degrees * (PI / 180.0)` |
+| `smoothStep` from `MemorialTextDrawing.kt:84` | a private copy in the pane |
+
+Three things are worth recording because they were decisions, not transcription:
+
+- **The cover pool drops from 23 to 6.** `MemorialCoverAssets` in
+  `shared/.../ui/screens/ArchiveVisuals.kt` holds `memorial_cover_pattern` plus `_02` through `_06`;
+  covers `_07`..`_23` stay in `:app` with the memorial reader. This is deliberate and follows the
+  artwork rule below: the 22 `memorial_cover_*.jpg` are ~28 MB and 41 of the 49 outstanding assets are
+  referenced only by the reader that has not been migrated. The wheel still looks populated because
+  `MemorialCoverSequence.wheelResources` rotates a duplicate guard over whatever pool it is given — it
+  just has fewer distinct faces than Android. **When the reader lands, this list grows back.**
+- **`MemorialCoverSequence` was genericised, not forked.** Its `wheelResources` and four validation
+  helpers took `List<Int>`; they now take `List<T>`, so one implementation serves the Android `Int`
+  pool and the shared `String` pool. A second copy keyed on `String` would have drifted.
+- **The back arrow is drawn locally.** `:shared` has no Material Icons dependency. `BackArrowGlyph`
+  reuses `HeaderBackButton`'s geometry (a shaft plus a chevron head, `strokeWidth = height * 0.11`)
+  and is passed into `PaneHeroHeader`'s `backIcon` slot, which is how the header was designed to be
+  fed. The slot has **no fallback**: when it is null the `IconButton` renders an empty box, still
+  occupying its touch target. That silence is exactly how an icon seam gets lost, so it is called out
+  here.
+
+Status: **compiles and tests pass locally** (`./gradlew :shared:compileKotlinDesktop :shared:desktopTest`,
+33 tests / 0 failures), and the root dispatches `AppPane.MEMORIAL` to it. It has **not** been seen on
+screen — the next CI run that reaches the smoke test is the first evidence, and even then the smoke
+test only captures the *entry* pane, so the briefing pane is not in those five screenshots. Reaching it
+requires tapping through to it on a device.
 
 ### `SettingsPane` migrated (compiles green)
 
@@ -766,8 +810,8 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 
 ## Remaining work
 
-1. Migrate `MemorialBriefingPane` using the atomic-pass strategy above. (`HomePane` is done — see the
-   HomePane section.)
+1. ~~Migrate `MemorialBriefingPane` using the atomic-pass strategy above.~~ **Done** — see the
+   MemorialBriefingPane section. The atomic-pass list is now empty.
 2. Re-platform `DetailPane.kt`: image decoding, a document picker, content-source materialization and
    markdown-prefill writing are four Android seams that need shared abstractions first. The screen
    cannot be converted before they exist.
@@ -847,10 +891,18 @@ fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { def
 ```
 
 It installs `ProvideImperialFonts` and `ArchiveAssistantTheme` around the content, reads
-`stateStore.state`, and dispatches: `AppPane.TOPICS` → `HomePane` (the dashboard), `AppPane.SETTINGS` →
-`SettingsPane`; anything else → `NotYetMigratedPane`, which says so in words rather than drawing an empty
-box that would be indistinguishable from a layout bug. `TopicManagementDialogs` is composed outside the
-dispatch, matching the Android host — HomePane only *requests* a rename or delete through callbacks.
+`stateStore.state`, and dispatches: `AppPane.TOPICS` → `HomePane` (the dashboard), `AppPane.MEMORIAL` →
+`MemorialBriefingPane`, `AppPane.SETTINGS` → `SettingsPane`; anything else → `NotYetMigratedPane`, which
+says so in words rather than drawing an empty box that would be indistinguishable from a layout bug.
+`TopicManagementDialogs` is composed outside the dispatch, matching the Android host — HomePane only
+*requests* a rename or delete through callbacks.
+
+The `MEMORIAL` branch mirrors the Android host's **phone** layout: it passes `showBackButton = true` and
+`onBack = stateStore::closePanes`, because on a phone the briefing occupies the whole screen. The
+Android wide layout passes `showBackButton = false` instead; this root has no wide layout yet, so the
+phone behaviour is the one carried over. `onOpenMemorialDemo = {}` is inert on purpose for the same
+reason as `onChooseModelFile`: tapping the briefing opens `MemorialDemoOverlay`, which is a pure
+`AndroidView` wrapper around `MemorialFoldView` (remaining work #3).
 
 `HomePane` was added to the dispatch after being migrated; `SettingsPane` was the only entry for a while,
 which is why older sections of this document read as if settings were the whole UI.

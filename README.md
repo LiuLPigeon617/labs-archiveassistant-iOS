@@ -28,13 +28,15 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 目标平台：`desktop`（本机可验证的 JVM 目标）、`androidTarget`、`iosArm64`、`iosSimulatorArm64`；iOS 产物为名为 `SharedKit` 的 XCFramework。
 - iOS 宿主工程：`iosApp/` 提供 SwiftUI 外壳、原生设置页、状态桥接与平台引导代码；持续集成在 macOS 上构建未签名 IPA。
 - Compose 入口点已接通：`ArchiveAssistantRoot` 是首个跨平台组合根，在根组件安装 `ProvideImperialFonts`（两套书法字体自此真正生效）与 `ArchiveAssistantTheme`，并按 `state.selectedPane` 分发到已迁移的首页（`AppPane.TOPICS`）与设置页（`AppPane.SETTINGS`）；`TopicManagementDialogs` 与 Android 宿主一样挂在分发之外，否则首页的「管理 → 改名/删除」链路会断。iOS 侧由 `IosComposeRoot.makeViewController()` 提供 `ComposeUIViewController` 工厂（以 `AppPane.TOPICS` 起步），经 `ArchiveComposeHostingViewController` 承载。
+- 奏折简报页（奏折转盘首页）已迁入共享内核：`shared/src/commonMain/.../ui/screens/MemorialBriefingPane.kt` 逐段对应 Android 版 805 行，接缝改法与首页一致（`@DrawableRes` 整型改为资源名 `String` 走 `archivePainterOrPlaceholder`、两处旧字体常量换 `LocalImperialFonts.current`、`Math.toRadians` 换 `kotlin.math.PI` 换算、返回箭头改为本地 Canvas 绘制）。`ArchiveAssistantRoot` 现按 `state.selectedPane` 分发首页、奏折简报页与设置页三个面板。**注意封面转盘的可选封面从 Android 的 23 张减为 6 张**：其余 17 张只被尚未迁移的奏折阅读器使用，按「随界面迁移一并重采样」原则暂缓，等阅读器迁移时补回。该页目前只有编译与单元测试保证，尚未出现在冒烟截图里（截图只拍入口页），也未经过人眼确认。
 - 主题已迁入共享内核：`ArchiveAssistantTheme` 现位于 `shared/src/commonMain/.../ui/theme/Theme.kt`，把 `MaterialTheme.colorScheme` 映射到皇家配色，并移植了完整 15 级字阶；浅色与深色两套配色都保留，`SettingsPane`、`HomePane` 等界面不再回落到默认紫色强调色。
 - iOS 侧有截图级验证：持续集成新增 `Simulator smoke (screenshots)` 作业，在 macOS runner 上构建模拟器版本并真正启动，先在 iPhone 运行时上截取原生外壳、共享 Compose 界面（浅色）与深色三张，再在 iPad 运行时上截取原生外壳与共享 Compose 界面（浅色）两张，共五张，连同 App 日志与崩溃报告一起作为构建产物上传。字体与配色是否真的渲染出来，由这五张图回答，而不再只能靠「编译通过」推断。像素检查按设备分别取阈值：iPhone 截图需 ≥25 个量化色彩（实测原生外壳 86），iPad 截图需 ≥20（实测原生外壳 81——比 iPhone 还低 5 个，所以两个设备不能共用一个值）。截图文件名随预览起点变化：预览起点自首页迁移完成起为 `AppPane.TOPICS`，故为 `02/03-compose-home-*.png`；早期产物中的 `02/03-compose-settings-*.png` 来自起点仍是设置页的那一轮。首页迁移后的那次运行（`fc127ec`）里，两张 Compose 截图的量化色彩数从设置页时代的 167 / 154 涨到 1153 / 1154，是「仪表盘真的画出来了」的量化证据。**注意本仓库的构建产物保留期很短**，隔一段时间再去下载会得到 `Artifact has expired`，需要看图时应当场下载或重新触发 `gh workflow run ios-build.yml`。
 
 ## 尚未完成与已知问题
 
 - 共享界面在 iOS 上仍属预览态：Compose 根组件由工具栏入口以全屏预览的方式承载，尚未挂进左右两栏；两栏目前是明确标注为占位的 `UnmigratedPanePlaceholder`。原因是详情页还没迁入共享内核。
-- 界面迁移尚未完成：折页式奏折阅读/审阅相关界面、详情页与奏折简报页尚未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接；首页已在 `shared/.../ui/screens/HomePane.kt` 完成迁移。
+- 界面迁移尚未完成：折页式奏折阅读/审阅相关界面（含 `MemorialFoldView`）与详情页仍未迁入共享内核。详情页包含 `LocalContext`、`BitmapFactory`、`Uri`、`rememberLauncherForActivityResult` 等 Android 专有依赖，需要先补平台抽象再接。首页（`shared/.../ui/screens/HomePane.kt`）与奏折简报页（`shared/.../ui/screens/MemorialBriefingPane.kt`）已完成迁移。
+- 奏折简报页的两个已知限制：封面转盘只有 6 张可选封面（Android 有 23 张，其余待阅读器迁移时补回）；点击页面本应打开 `MemorialDemoOverlay` 折页演示，但该界面是 `MemorialFoldView` 的纯 AndroidView 包装，尚未迁移，因此共享根里该回调被刻意置空——点了不会有反应，与「选择模型文件」同一处理方式。
 - 首页迁移后的三个已知限制：设置按钮与搜索清空按钮是本地 Canvas 绘制的近似字形（模块不依赖 Material Icons），不是原始矢量图标；iOS 上的实际渲染只有截图冒烟测试覆盖，且截图只捕获首帧，点击 tile 之后的行为不在覆盖范围内；首页「新建/改名/删除」三个按钮点了没反应，因为共享 store 的 `openCreateTopicDialog()` / `openRenameTopicDialog()` 会直接把对话框模式置空并给出 `TOPIC_CRUD_DISABLED_MESSAGE`（与「六部分类当前固定」一致），这不是本次迁移引入的缺陷。
 - 10 个 XML vector drawable 在 iOS 上尚无人眼确认：首页的 5 个纹饰与 6 个文件夹底纹是 Android 格式的 `<vector>` XML，Compose Multiplatform 文档支持该格式，文件也已过「无 Android 外部引用」检查，但 `archivePainterOrPlaceholder` 对解析失败的名字会静默返回 1×1 透明图——也就是说即使全都没画出来，截图冒烟的像素检查照样通过。这一条只能靠人看截图确认。
 - 奏折美术资源尚未入包：49 个被代码引用的图形资源合计约 44.9 MB，其中 41 个只被尚未迁移的奏折阅读器使用，因此按“随界面迁移一并重采样”的原则暂缓。

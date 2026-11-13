@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import com.lyihub.archiveassistant.domain.AppPane
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
 import com.lyihub.archiveassistant.ui.screens.HomePane
+import com.lyihub.archiveassistant.ui.screens.MemorialBriefingPane
+import com.lyihub.archiveassistant.ui.screens.TOTAL_PENDING_MEMORIALS
 import com.lyihub.archiveassistant.ui.screens.SettingsPane
 import com.lyihub.archiveassistant.ui.screens.TopicManagementDialogs
 import com.lyihub.archiveassistant.ui.theme.ArchiveAssistantTheme
@@ -39,9 +41,9 @@ import com.lyihub.archiveassistant.ui.theme.ProvideImperialFonts
  *
  * ### What it dispatches to, and what is missing
  *
- * [HomePane] (the dashboard) and [SettingsPane] are migrated, so those two panes render. Everything
- * else — `DetailPane`, `MemorialBriefingPane` — still lives in the Android `:app` module, so the
- * `else` branch says so instead of rendering an empty box.
+ * [HomePane] (the dashboard), [SettingsPane] and [MemorialBriefingPane] are migrated, so those three
+ * panes render. `DetailPane` still lives in the Android `:app` module, so the `else` branch says so
+ * instead of rendering an empty box.
  *
  * The dispatch is keyed on [AppPane] because the store already carries that field on every target;
  * no extra navigation state had to be invented for this root.
@@ -82,6 +84,22 @@ fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { def
           onSearchQueryChanged = stateStore::updateHomeSearchQuery,
           onOpenClipboard = stateStore::openLatestClipboardDialog,
           onOpenMemorialDemo = stateStore::openMemorialBriefing,
+        )
+      } else if (state.selectedPane == AppPane.MEMORIAL) {
+        // Mirrors the Android host's phone layout: the briefing pane gets the back affordance and
+        // closes panes, because on a phone it occupies the whole screen. The wide layout passes
+        // `showBackButton = false` there instead; this root has no wide layout yet, so the phone
+        // behaviour is the one to carry over.
+        MemorialBriefingPane(
+          pendingCount = TOTAL_PENDING_MEMORIALS,
+          briefingItems = state.items,
+          // Tapping the briefing opens `MemorialDemoOverlay` on Android, which is a pure
+          // `AndroidView` wrapper around `MemorialFoldView` — remaining work #3, not migrated. Left
+          // inert on purpose, like the model-file picker above: a callback that pretends to work
+          // would be worse than one that is visibly absent.
+          onOpenMemorialDemo = {},
+          onBack = stateStore::closePanes,
+          showBackButton = true,
         )
       } else if (state.selectedPane == AppPane.SETTINGS) {
         SettingsPane(
@@ -156,7 +174,7 @@ private fun NotYetMigratedPane() {
     contentAlignment = Alignment.Center,
   ) {
     Text(
-      text = "共享 Compose 层还没有可显示的面板。\n主页与设置页已就绪，详情页与奏折页仍在迁移中。",
+      text = "共享 Compose 层还没有可显示的面板。\n主页、设置页与奏折简报页已就绪，详情页仍在迁移中。",
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       modifier = Modifier.padding(24.dp),
     )
