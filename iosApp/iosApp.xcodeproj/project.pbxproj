@@ -14,7 +14,7 @@
 		AAAAAAAAAAAAAAAAAAAA0105 /* ComposeHostingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0205 /* ComposeHostingViewController.swift */; };
 		AAAAAAAAAAAAAAAAAAAA0106 /* SharedStateBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0206 /* SharedStateBridge.swift */; };
 		AAAAAAAAAAAAAAAAAAAA0107 /* IosPlatformBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0207 /* IosPlatformBootstrap.swift */; };
-		AAAAAAAAAAAAAAAAAAAA0108 /* IosDocumentPickerHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0208 /* IosDocumentPickerHost.swift */; };
+		AAAAAAAAAAAAAAAAAAAA010B /* IosDocumentPickerHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA020A /* IosDocumentPickerHost.swift */; };
 		AAAAAAAAAAAAAAAAAAAA0108 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0208 /* AppDelegate.swift */; };
 		AAAAAAAAAAAAAAAAAAAA0109 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA0209 /* Assets.xcassets */; };
 		AAAAAAAAAAAAAAAAAAAA010A /* SharedKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = AAAAAAAAAAAAAAAAAAAA020C /* SharedKit.xcframework */; };
@@ -29,7 +29,7 @@
 		AAAAAAAAAAAAAAAAAAAA0205 /* ComposeHostingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeHostingViewController.swift; sourceTree = "<group>"; };
 		AAAAAAAAAAAAAAAAAAAA0206 /* SharedStateBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedStateBridge.swift; sourceTree = "<group>"; };
 		AAAAAAAAAAAAAAAAAAAA0207 /* IosPlatformBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosPlatformBootstrap.swift; sourceTree = "<group>"; };
-		AAAAAAAAAAAAAAAAAAAA0208 /* IosDocumentPickerHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosDocumentPickerHost.swift; sourceTree = "<group>"; };
+		AAAAAAAAAAAAAAAAAAAA020A /* IosDocumentPickerHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosDocumentPickerHost.swift; sourceTree = "<group>"; };
 		AAAAAAAAAAAAAAAAAAAA0208 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		AAAAAAAAAAAAAAAAAAAA0209 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AAAAAAAAAAAAAAAAAAAA020B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -58,7 +58,7 @@
 				AAAAAAAAAAAAAAAAAAAA0205 /* ComposeHostingViewController.swift */,
 				AAAAAAAAAAAAAAAAAAAA0206 /* SharedStateBridge.swift */,
 				AAAAAAAAAAAAAAAAAAAA0207 /* IosPlatformBootstrap.swift */,
-				AAAAAAAAAAAAAAAAAAAA0208 /* IosDocumentPickerHost.swift */,
+				AAAAAAAAAAAAAAAAAAAA020A /* IosDocumentPickerHost.swift */,
 				AAAAAAAAAAAAAAAAAAAA0208 /* AppDelegate.swift */,
 				AAAAAAAAAAAAAAAAAAAA0209 /* Assets.xcassets */,
 				AAAAAAAAAAAAAAAAAAAA020B /* Info.plist */,
@@ -175,7 +175,7 @@
 				AAAAAAAAAAAAAAAAAAAA0105 /* ComposeHostingViewController.swift in Sources */,
 				AAAAAAAAAAAAAAAAAAAA0106 /* SharedStateBridge.swift in Sources */,
 				AAAAAAAAAAAAAAAAAAAA0107 /* IosPlatformBootstrap.swift in Sources */,
-				AAAAAAAAAAAAAAAAAAAA0108 /* IosDocumentPickerHost.swift in Sources */,
+				AAAAAAAAAAAAAAAAAAAA010B /* IosDocumentPickerHost.swift in Sources */,
 				AAAAAAAAAAAAAAAAAAAA0108 /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
