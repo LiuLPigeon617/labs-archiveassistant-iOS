@@ -161,7 +161,7 @@ xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
 
 **Compose 的 `compose-resources` 必须由 Xcode 构建阶段同步进 App 包，不能只靠 Gradle 编出 framework。** Compose Multiplatform 不把字体和图片放进 framework，而是用 `SyncComposeResourcesForIosTask` 拷进 App 包，插件把这个任务挂在 `embedAndSign<Framework>AppleFrameworkForXcode` 上。本项目在 `iosApp/iosApp.xcodeproj` 的「Build SharedKit.xcframework」阶段手工暂存 XCFramework、从不走那条链，因此该目录一直是空的，App 一读字体就抛 `MissingResourceException` 崩溃——**编译器、链接器与 `codesign` 都看不出这个问题**，只有真正运行才发现。现在该构建阶段会显式运行这个同步任务（任务名按 framework classifier 推导，用 `:shared:tasks --all` 在运行时发现，不硬编码），两个 CI 作业也都在构建产物上断言 `compose-resources` 里至少有 `.ttf`。
 
-最近一次验证过的构建（提交 `fc127ec`，运行 37300716982）两个作业全绿：`Build unsigned IPA` 与 `Simulator smoke (screenshots)` 都通过，模拟器截图里能看到真实的共享 Compose 首页仪表盘（浅色与深色各一张）。此前一轮（提交 `4b0547c`，运行 37214783385）拍到的是设置页，未签名 IPA 为 23,392,233 字节。共享内核的单测报告、`xcodebuild` 日志与三张截图一并作为构建产物上传，但保留期很短，见上文。
+最近一次验证过的构建（提交 `f416400`，运行 43515522851）两个作业全绿：`Build unsigned IPA` 与 `Simulator smoke (screenshots)` 都通过，模拟器截图里能看到真实的共享 Compose 首页仪表盘（iPhone 浅色/深色、iPad 浅色各一张，`crashes.txt` 为空，五张图的像素检查在各自设备阈值下全部通过），未签名 IPA 为 27,417,150 字节。此前一轮（提交 `4b0547c`，运行 37214783385）拍到的是设置页，未签名 IPA 为 23,392,233 字节。共享内核的单测报告、`xcodebuild` 日志与五张截图一并作为构建产物上传，但保留期很短，见上文。
 
 体积变化值得注意，而这里有一条**容易搞反的归因**：
 

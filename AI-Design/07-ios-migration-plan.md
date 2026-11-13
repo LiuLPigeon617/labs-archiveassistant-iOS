@@ -145,16 +145,19 @@ homepage dashboard; see the pixel table further down. The previous milestone was
 one was **run 37199938026 on `135d2f2`**, the first run whose Compose root compiled and archived (15 steps
 plus 4 post steps, 11 minutes). Before `10a44a8` the workflow had **never** passed.
 
-**As of 2026-11-14 the pipeline is red again, for two real and unrelated reasons** — and this
-paragraph exists so nobody re-diagnoses them from scratch. Run 43503533031 (`ccf9f42`) got a macOS
-machine and failed both jobs in genuinely different places:
+**As of 2026-11-14 the pipeline is green again, after going red for two real and unrelated reasons**
+— this paragraph exists so nobody re-diagnoses them from scratch. Run 43515522851 (`f416400`) is the
+green one: both jobs succeeded (~74 minutes from queue to finish), the simulator produced
+all five screenshots, `crashes.txt` was empty, and the pixel check passed on both device thresholds.
+The red run it replaces was 43503533031 (`ccf9f42`), which got a macOS machine and failed both jobs in
+genuinely different places:
 
 | job | failing step | cause |
 |---|---|---|
 | `Build unsigned IPA` | `Build unsigned .app` | Swift: `cannot convert value of type '(String?) -> KotlinUnit' to expected argument type '(String?) -> Void'` at `IosPlatformBootstrap.swift:61` |
 | `Simulator smoke` | `Build and stage SharedKit.xcframework` | `java.lang.OutOfMemoryError: Java heap space` during `:shared:linkReleaseFrameworkIosArm64` |
 
-Both are fixed in the commit that carries this note. The Swift one wraps the Kotlin callback
+Both were fixed in `f416400`, which is exactly the commit run 43515522851 validated. The Swift one wraps the Kotlin callback
 (`onPicked: { path in _ = callback(path) }`); the memory one sets `kotlin.native.jvmArgs=-Xmx4g`,
 because the plugin's default for that forked compiler JVM is `-Xmx3g` regardless of
 `org.gradle.jvmargs`. Both traps are described in full under "Tooling pitfalls encountered".
@@ -268,8 +271,10 @@ quantisation the script uses, on run 37203635522 (where every Compose launch cra
 | iPhone native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
 | Compose settings pane, light (the pane the preview opened on then) | **167** | 37214783385 |
 | Compose settings pane, dark (same) | **154** | 37214783385 |
-| iPad native shell, light | **81** | 39979857765 |
-| iPad Compose home, light | **1177** | 39979857765 |
+| Compose home dashboard, light | **1153** | 43515522851 |
+| Compose home dashboard, dark | **1154** | 43515522851 |
+| iPad native shell, light | **81** | 39979857765, 43515522851 |
+| iPad Compose home, light | **1177** | 39979857765, 43515522851 |
 | springboard fallback after a crash | **2663 / 2822** | 37203635522 |
 
 The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
