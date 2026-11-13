@@ -54,5 +54,11 @@ enum IosPlatformBootstrap {
     bridge.bundleResourcePath = { name, ext in
       Bundle.main.url(forResource: name, withExtension: ext.isEmpty ? nil : ext)?.path
     }
+
+    // The picker has to be presented by a view controller, which Kotlin/Native cannot reach, so the
+    // presentation and the security-scope handling live in IosDocumentPickerHost.
+    bridge.pickFile = { extensions, callback in
+      IosDocumentPickerHost.shared.present(allowedExtensions: extensions, onPicked: callback)
+    }
   }
 }

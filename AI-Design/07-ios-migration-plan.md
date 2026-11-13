@@ -437,6 +437,11 @@ Byte payloads cross the boundary as Base64 strings rather than `ByteArray`, beca
   MemorialStackGeometry, PaneHeroHeader, SettingsPane, TagVisuals, TopicManagementDialogs
 - root: ArchiveAssistantRoot (the composition root), ArchivePainter, ArchiveFont (the two seam objects)
 
+The platform seams that the *next* screen needs are also in `commonMain` now, outside `ui/`:
+`platform/ContentImport.kt` (`ImagePixelSize`, `ImageBytesDecoder`, `ContentPicker`) and
+`data/ContentMaterialization.kt` (`ContentImporter`, `writeMarkdownPrefill`, `ImportNaming.kt`). See
+*The four `DetailPane` seams are now shared abstractions*.
+
 ### Verification target
 
 The compile-verification target is `jvm("desktop")`, not plain `jvm()`. Compose UI artifacts do not
@@ -555,10 +560,70 @@ needs real platform abstractions (image decoding, a file/document picker, conten
 materialization) before any conversion, so it is a work item of its own rather than a fifth atomic
 pass.
 
+**All four abstractions now exist** — see *The four `DetailPane` seams are now shared
+abstractions*, further down; what is left is the conversion itself.
+
 Net: **two** screens *were* convertible, not four — a scope reduction of ~1500 lines against what this
 document previously implied. Both have since been migrated: `HomePane` and `MemorialBriefingPane`.
 **The atomic-pass list is now empty.** Everything left is either the memorial reader's Canvas refactor
 (remaining work #3) or `DetailPane`, which needs platform abstractions before any conversion.
+
+### The four `DetailPane` seams are now shared abstractions
+
+`DetailPane.kt` cannot be converted by renaming resources, because four of its dependencies are image
+and file platform APIs. Those four are now behind `commonMain` interfaces with one implementation per
+platform — `shared/.../platform/ContentImport.kt` and `shared/.../data/ContentMaterialization.kt`:
+
+| `DetailPane.kt` dependency | shared abstraction | platform sides |
+|---|---|---|
+| `BitmapFactory` + `resources.openRawResource` (measure, then decode) | `ImageBytesDecoder.readSize` / `.decode` → `ImageBitmap`, from `platformImageDecoder()` | Android `BitmapFactory.decodeByteArray` (`inJustDecodeBounds` for the size); desktop and iOS `decodeToImageBitmap` |
+| `rememberLauncherForActivityResult(GetContent())` + `Uri` | `ContentPicker.pick(allowedExtensions): ContentSource?`, from `platformContentPicker()` | Android injected via `AndroidContentPickerHost`; desktop `JFileChooser`; iOS `UIDocumentPickerViewController` via `IosNativeBridge.pickFile` |
+| `copyUriToFile` + `uniqueImportFile` | `ContentImporter.materialize(source, directory): String?` | one common `FileStoreContentImporter` over `PlatformFileStore` — the platform half is already behind `ContentSource.openRead` |
+| `writeMarkdownPrefillFile(context, title, content)` | `writeMarkdownPrefill(fileStore, itemsDir, title, content): String?` | common, over `PlatformFileStore` |
+
+Six things were judgements, not transcription:
+
+- **`ImageBitmap` rather than `ByteArray` as the decode result.** `Bitmap` is not a multiplatform type,
+  and handing bytes back would make every caller re-implement decoding. `ImageBitmap` is what all four
+  targets paint.
+- **`ContentSource` rather than a path or a `Uri` at the picker boundary.** `Uri` does not exist on
+  Kotlin/Native at all, and a bare path carries no display name. The existing `resolveContentSource(key)`
+  seam already models *something I can open and read*, so the picker returns that same type; `null` means
+  cancelled, or no picker installed yet.
+- **The Android picker is injected, not implemented.** `rememberLauncherForActivityResult` only works
+  inside a composable with an activity host, and `:shared` deliberately has no `androidx.activity`
+  dependency — adding one would put an Android-only artifact on the iOS compile classpath. So
+  `AndroidContentPickerHost.install(picker)` mirrors the existing `AndroidPlatformContext` shape; until a
+  host installs one, `CancellingContentPicker` answers `null`, which reads as a cancelled pick. This is
+  the one seam whose Android side is still a host obligation.
+- **`writeMarkdownPrefill` is a new function, not a change to `writeMarkdownFile`.** The older
+  `data/Support.kt:8` `expect fun writeMarkdownFile` overwrites a same-named note and is not `suspend`.
+  The `DetailPane` path needs `markdownFileName`'s naming *and* uniqueness. Two behaviours under one name
+  is a trap, so the old function keeps its semantics and only new call sites use the new one.
+- **desktop and iOS decode with `decodeToImageBitmap`, never skiko directly.**
+  `androidx.compose.ui.graphics.ImageBitmapKt.decodeToImageBitmap(byte[])` is present in
+  `ui-graphics-desktop-1.8.0.jar` (checked with `javap`). Importing `org.jetbrains.skia.Image` instead
+  would put skiko on the iOS compile classpath, where `:shared` does not declare it — a failure only a
+  macOS CI run would reveal. For the record, `toComposeImageBitmap` and `asComposeImageBitmap` appear
+  nowhere in the compose artifacts: grep count zero.
+- **Six duplicated lines beat a `skikoMain` source set.** Sharing the two decoders would need a new
+  source-set tier verified only by a ~40-minute macOS CI run, to delete six lines. If a third decoder
+  caller ever appears, promote the source set then.
+
+One deliberate imperfection: `readSize` on desktop and iOS decodes the whole image, because skiko has no
+bounds-only decoder. `DetailPane` measures one image per open, so this is recorded rather than hidden.
+
+`ContentImport.kt` also gained a real iOS picker to go with the seam —
+`iosApp/iosApp/IosDocumentPickerHost.swift` presents a `UIDocumentPickerViewController`, opens the
+security scope, and hands back a plain path (copying into the temporary directory when the provider
+ignores `asCopy`), because `:shared` reads files by path.
+
+Verified locally with `./gradlew --offline :shared:compileKotlinDesktop :shared:desktopTest` → BUILD
+SUCCESSFUL, 44 tests / 0 failures, 11 of them new in `ContentMaterializationTest` (naming, uniqueness,
+the unreadable-source path, the empty-directory path). **Not** verified: the Android implementation (no
+Android SDK on this machine, and `:app` does not depend on `:shared`), the iOS implementation and the
+Swift picker host (needs macOS and a human tapping a button), and the pickers in general — a fake can
+only test a fake.
 
 ### `HomePane` migrated (compiles and renders green)
 
@@ -812,9 +877,12 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 
 1. ~~Migrate `MemorialBriefingPane` using the atomic-pass strategy above.~~ **Done** — see the
    MemorialBriefingPane section. The atomic-pass list is now empty.
-2. Re-platform `DetailPane.kt`: image decoding, a document picker, content-source materialization and
-   markdown-prefill writing are four Android seams that need shared abstractions first. The screen
-   cannot be converted before they exist.
+2. Re-platform `DetailPane.kt`. ~~The four Android seams need shared abstractions first.~~ **The
+   abstractions exist now** (`platformImageDecoder`, `platformContentPicker`, `contentImporter`,
+   `writeMarkdownPrefill`) with Android, desktop and iOS implementations, verified on desktop by 44
+   tests. What remains is the conversion of the 1220-line screen itself, plus one host obligation: the
+   Android picker must be installed through `AndroidContentPickerHost`. The iOS picker needs a human
+   to tap it on a simulator before it can be called working.
 3. Migrate the Canvas-heavy memorial views (10 files, ~5651 lines, incl. `MemorialFoldView.kt` at
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a

@@ -22,6 +22,15 @@ object IosNativeBridge {
   var modelsDir: (() -> String)? = null
   var bundleResourcePath: ((name: String, ext: String) -> String?)? = null
 
+  /**
+   * Presents the system document picker and reports the chosen path, or null when cancelled.
+   *
+   * `UIDocumentPickerViewController` must be presented from a UIViewController, which Kotlin/Native
+   * cannot reach safely from shared code, so the picker lives entirely in Swift and this slot only
+   * carries the callback. A null slot means "no picker installed": callers see a cancelled pick.
+   */
+  var pickFile: ((extensions: List<String>, callback: (String?) -> Unit) -> Unit)? = null
+
   /** True once Swift has installed the minimum set of handlers. */
   val isReady: Boolean
     get() = exists != null && writeBase64 != null && readBase64 != null && itemsDir != null
