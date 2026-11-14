@@ -24,11 +24,14 @@ the app's worst-performing surface per the README — into a WKWebView.
 
 ```
 iosApp/                      Swift sources + Xcode project (macOS only)
-  ArchiveAssistantApp.swift        @main, WindowGroup (iPad multi-window)
-  MainWorkspaceView.swift          NavigationSplitView shell
-  SettingsView.swift               native SwiftUI: Form, Picker, SecureField, SF Symbols
+  ArchiveAssistantApp.swift        @main, WindowGroup -> MainWorkspaceView
+  MainWorkspaceView.swift          mounts the Compose root; no native chrome left
   ComposeHostingViewController     UIViewControllerRepresentable bridge
-  SharedStateBridge.swift          ObservableObject over the Kotlin store
+  IosPlatformBootstrap.swift       file/resource/picker bridge install
+  IosDocumentPickerHost.swift      UIDocumentPickerViewController host
+  ContentView.swift                UNREACHABLE - was the preview staging surface
+  SettingsView.swift               UNREACHABLE - native settings, bound to a placeholder store
+  SharedStateBridge.swift          UNREACHABLE - ObservableObject over SharedStateStore
 
 shared/                      KMP module
   commonMain/
@@ -227,17 +230,21 @@ palette had only ever been verified by a green compile. A compile cannot tell yo
 app for the simulator, installs it, launches it three times, and screenshots each launch — all driven
 by `.github/scripts/simulator-smoke.sh`.
 
-Three screenshots, because they answer different questions:
+Three screenshots, because they answer different questions. They used to include two native shell
+captures (`01-native-shell-light.png`, `04-ipad-native-shell-light.png`); those are gone with the shell.
 
 | Screenshot | Launch | Question it answers |
 |---|---|---|
-| `01-native-shell-light.png` | no argument | does the SwiftUI shell render at all (the baseline) |
-| `02-compose-home-light.png` | `--compose-preview` | does the shared Compose tree render, and do the bundled fonts show |
-| `03-compose-home-dark.png` | `--compose-preview`, dark appearance | did `isSystemInDarkTheme()` resolve to the dark scheme at first composition |
+| `01-compose-home-light.png` (iPhone) | no argument | does the shared Compose dashboard render, and do the bundled fonts show |
+| `02-compose-home-dark.png` (iPhone) | no argument, dark appearance | did `isSystemInDarkTheme()` resolve to the dark scheme at first composition |
+| `03-ipad-compose-home-light.png` (iPad) | no argument | does the dashboard reflow correctly at 2064pt, and does the font/resource pack still load there |
 
-The last two were named `02/03-compose-settings-*.png` while settings was the only migrated pane. The
-artifacts of run 37214783385 keep those old names; the captures from the HomePane migration onward are
-named for the dashboard, because that is what the preview entry point now opens on.
+Names have moved twice and each move is recorded rather than retro-fixed: `02/03-compose-settings-*.png`
+while settings was the only migrated pane (run 37214783385 keeps those names), then
+`02/03-compose-home-*.png` once the entry point moved to the dashboard, and now `01/02-…` on the iPhone
+plus `03-…` on the iPad because the two native-shell captures (`01-native-shell-light.png`,
+`04-ipad-native-shell-light.png`) were deleted with the shell. Artifacts already published under the
+older names are left alone — renaming a capture that exists would make the old runs unfindable.
 
 All three upload in the `ios-simulator-smoke` artifact. That artifact is the point: it answers the
 font question by *showing* it, which is the only way that question can be answered.
@@ -249,14 +256,14 @@ expects an ad-hoc signature and `simctl install` accepts the default product, so
 screenshot relaunches under a switched appearance rather than toggling it under a running app, because
 that is what exercises the value `isSystemInDarkTheme()` resolves at *first* composition.
 
-**The `--compose-preview` launch argument.** `simctl launch` can pass arguments but cannot tap the
-toolbar button that opens `ComposeRootPreviewView`, and driving the UI instead would mean adding a UI
-automation target to the Xcode project. So `MainWorkspaceView.swift` reads
-`ProcessInfo.processInfo.arguments` and starts with the preview already presented. It changes only
-where the app *starts*, not what it renders. The manual equivalent, useful locally on a Mac:
+**The `--compose-preview` launch argument is gone.** It existed because `simctl launch` can pass
+arguments but cannot tap a toolbar button, and driving the UI instead would have meant adding a UI
+automation target to the Xcode project. With `MainWorkspaceView` mounting the Compose root directly,
+the launch starts in Compose and the argument has no reader, so it was removed from the script and the
+docs. The manual equivalent, useful locally on a Mac, is now argument-free:
 
 ```bash
-xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview
+xcrun simctl launch booted com.lyihub.archiveassistant
 ```
 
 **What the pixel check does and does not prove.** `.github/scripts/check-screenshot.swift` decodes each
@@ -268,26 +275,30 @@ quantisation the script uses, on run 37203635522 (where every Compose launch cra
 | capture | distinct colours | source |
 |---|---|---|
 | genuinely blank screen | 1–3 | — |
-| iPhone native SwiftUI shell (real content: title, two toolbar buttons, placeholder) | **86** | both runs |
 | Compose settings pane, light (the pane the preview opened on then) | **167** | 37214783385 |
 | Compose settings pane, dark (same) | **154** | 37214783385 |
 | Compose home dashboard, light | **1153** | 43515522851 |
 | Compose home dashboard, dark | **1154** | 43515522851 |
-| iPad native shell, light | **81** | 39979857765, 43515522851 |
 | iPad Compose home, light | **1177** | 39979857765, 43515522851 |
 | springboard fallback after a crash | **2663 / 2822** | 37203635522 |
+| *(retired)* iPhone native SwiftUI shell | 86 | 39979857765, 43515522851 |
+| *(retired)* iPad native SwiftUI shell | 81 | 39979857765, 43515522851 |
 
-The first threshold was 50, which put legitimate content only 36 shades from failing; 25 leaves the
-sparse native shell comfortable room while still sitting far above a blank screen.
+**The threshold history, because it explains the current number.** 50 first, which put legitimate
+content only 36 shades from failing. Then 25, calibrated against the sparse native shell (86) that the
+iPhone pass led with. Then, when the iPad pass arrived, two values — 25 for iPhone, 20 for iPad —
+because the iPad shell measured 81, five colours *below* the iPhone's, so no single value could sit
+under both floors at the same relative distance.
 
-The iPad capture made the *shared* threshold untenable rather than merely unproven. Its native shell
-measures **81**, five colours below the iPhone's 86, so one value cannot be calibrated against both
-floors. The script therefore carries two: **25 for the iPhone captures**, unchanged and still 3.4× the
-86 floor, and **20 for the iPad captures** (81 / 4 = 20.25, rounded down), which keeps the same order
-of headroom while staying ~7× above a blank screen's 3. The threshold follows the capture's file name
-(`01`–`03` iPhone, `04`–`05` iPad), and `MIN_DISTINCT` still overrides both for a one-off run. Note the last row: a
-crashed app's screenshot is *the most colourful image of the five*, so this check cannot detect the
-failure that matters most. It catches exactly one thing — a blank, flat or unmounted screen — and will
+**All of that is now gone, and the current value is 300.** Every capture is the same screen, so the
+sparse floor those numbers were guarding disappeared with the shell; keeping 25 would have meant
+keeping a threshold that a dashboard missing 97% of its colours still passes. 300 is 1153 / 300, i.e.
+**3.84× headroom** — slightly more than the 86 / 25 = 3.44 the old iPhone value carried — and ~100×
+a blank screen. Low enough that a partially-drawn dashboard is not failed on grounds of taste, high
+enough that an empty or unmounted screen cannot pass. `MIN_DISTINCT` still overrides it for a one-off run.
+
+Note the last two rows: a crashed app's screenshot is *the most colourful image of the set*, so this
+check cannot detect the failure that matters most. It catches exactly one thing — a blank, flat or unmounted screen — and will
 happily pass a screen that is wrong in every other way. Read the images; the check exists so that an
 empty screen fails the build instead of being uploaded and quietly ignored.
 
@@ -746,7 +757,7 @@ Three things are worth recording because they were decisions, not transcription:
 Status: **compiles and tests pass locally** (`./gradlew :shared:compileKotlinDesktop :shared:desktopTest`,
 33 tests / 0 failures), and the root dispatches `AppPane.MEMORIAL` to it. It has **not** been seen on
 screen — the next CI run that reaches the smoke test is the first evidence, and even then the smoke
-test only captures the *entry* pane, so the briefing pane is not in those five screenshots. Reaching it
+test only captures the *entry* pane, so the briefing pane is not in those screenshots. Reaching it
 requires tapping through to it on a device.
 
 ### `SettingsPane` migrated (compiles green)
@@ -926,10 +937,12 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 9. Implement `DocumentContentExtractor` for iOS via PDFKit (currently a `NoOp` placeholder).
 10. Replace the upscaled 512 px app icon with a native 1024 px asset before any App Store submission.
 11. ~~Widen the simulator smoke test beyond one iPhone portrait runtime.~~ **iPad done in `39979857765`,
-    thresholds calibrated from that run's captures in `6993db2`'s successor:** the script boots an
-    `iPad Pro` runtime, captures `04-ipad-native-shell-light.png` and `05-ipad-compose-home-light.png`,
-    and now checks each device against its own floor (`MIN_DISTINCT`: iPhone 25 / iPad 20 — the two
-    native shells measure 86 and 81, so a shared value could not be honest for both).
+    thresholds calibrated from that run's captures, and re-based when the SwiftUI shell was deleted:**
+    the script boots an `iPad Pro` runtime and captures `03-ipad-compose-home-light.png` alongside the
+    two iPhone dashboard shots. The threshold is back to a single value, `MIN_DISTINCT=300`, because
+    every capture is now the same Compose screen — the per-device floors (iPhone 25 / iPad 20) only
+    existed to sit under the two different native-shell colour counts (86 and 81), and those captures
+    no longer exist. 300 is 3.84× headroom under the measured 1153–1177 and ~100× a blank screen.
     **Landscape stays out**, for the reasons in *Tooling pitfalls*: no `simctl` rotation, the app mask
     ignored by iPadOS window resizing, no `devicectl` orientation subcommand. It needs a UI-test target
     on a separate branch.
@@ -1083,21 +1096,75 @@ worth remembering: a top-level Kotlin function exports under a file-facade name 
 anything Swift calls), and `ComposeUIViewController` reports no reliable intrinsic content size, so the
 Swift side must pin it with explicit constraints.
 
-On the Swift side:
+On the Swift side there are only three live files left:
 - `iosApp/iosApp/ComposeHostingViewController.swift` — `ArchiveComposeHostingViewController` replaced
   the placeholder. It forwards `supportedInterfaceOrientations` and `shouldAutorotate` to the child,
   because a container that inherited the portrait-only default would silently break iPad landscape.
-- `iosApp/iosApp/ContentView.swift` — now `ComposeRootPreviewView`, a `NavigationStack` hosting the
-  representable above. This is a **staging surface, not a product screen**, and it is intentionally
-  where the Compose tree is mounted.
-- `iosApp/iosApp/MainWorkspaceView.swift` — the two columns are now `UnmigratedPanePlaceholder`s and
-  no longer host Compose. Reason: mounting the root in a pane would have to choose between putting a
-  settings screen in the entry-detail column (a UI that lies about itself) or overturning the
-  deliberately-native SwiftUI settings page. Instead a toolbar button opens the Compose root as a
-  full-screen cover, which lies about nothing and can be deleted in one piece as panes land.
+- `iosApp/iosApp/MainWorkspaceView.swift` — now three lines of body: the representable above with
+  `.ignoresSafeArea()`. It is the whole product screen.
+- `iosApp/iosApp/ArchiveAssistantApp.swift` — `@main`. It keeps the `@UIApplicationDelegateAdaptor`
+  (without it SwiftUI never calls `AppDelegate`, so the Kotlin bridge never gets its implementations)
+  and no longer holds a `@StateObject`.
+
+**Why the shell was deleted rather than shrunk.** The old `MainWorkspaceView` was a
+`NavigationSplitView` with two `UnmigratedPanePlaceholder` columns, a toolbar preview button, and a
+toolbar gear opening a native `SettingsView`. That gear was the problem: `SettingsView` read and wrote
+`SharedStateBridge`, which wraps `SharedStateStore` — a placeholder whose `updateAiSettings()` assigned
+a field and whose `startModel()`/`stopModel()` had empty bodies. Every edit it accepted was discarded.
+A screen that accepts edits and silently drops them is worse than no screen, so the bridge and the
+settings sheet went, and `SettingsPane` in `commonMain` (which reaches the real
+`ArchiveAssistantStateStore`, and now persists through `FileAiEngineSettingsRepository`) is the only
+settings surface.
+
+`ContentView.swift` (`ComposeRootPreviewView`), `SettingsView.swift` and `SharedStateBridge.swift` are
+**still in the target but unreachable** — nothing instantiates them, and each carries a warning at the
+top of the file saying what it was. Removing them means deleting their four entries apiece from
+`project.pbxproj` (PBXBuildFile, PBXFileReference, PBXGroup children, PBXSourcesBuildPhase), which
+cannot be compiled on this machine. A file that does not compile is better than a project file that
+cannot be built, so the deletion is a separate, verifiable change rather than a side effect of this one.
 
 `onChooseModelFile = {}` is left inert on purpose: choosing a model file needs a native file picker
 that does not exist yet, and a callback that pretends to work is worse than one that is visibly absent.
+
+### The Compose root is the product screen now
+
+Before this change the shared module rendered, but only behind a door: `MainWorkspaceView` was a
+`NavigationSplitView` whose two columns were `UnmigratedPanePlaceholder`s, and the Compose tree was
+reachable through a toolbar button that presented `ComposeRootPreviewView` as a `fullScreenCover`.
+The smoke test launched with `--compose-preview` to open that door without a tap, which is why every
+screenshot from run 39979857765 onward had a native-shell capture next to it: there were genuinely two
+different screens to photograph.
+
+What made the door wrong was not its shape but what stood behind the other one. The toolbar gear opened
+a native `SettingsView` bound to `SharedStateBridge`, which wraps `SharedStateStore` — a placeholder
+whose `updateAiSettings()` assigned a field and whose `startModel()`/`stopModel()` had empty bodies.
+Every edit it accepted was echoed back and dropped. Two settings screens existed, and the reachable one
+was the one that could not save.
+
+So the shell was deleted rather than shrunk:
+
+- `MainWorkspaceView.swift` is now three lines of body — the representable with `.ignoresSafeArea()` —
+  and no navigation container, no toolbar, no sheet. `HomePane` draws its own imperial header and its
+  own gear, and that gear reaches `SettingsPane`, which talks to the real store.
+- `ArchiveAssistantApp.swift` dropped its `@StateObject`/`environmentObject`. It keeps the
+  `@UIApplicationDelegateAdaptor` — without it SwiftUI never calls `AppDelegate` and the Kotlin bridge
+  never receives its implementations.
+- `ContentView.swift`, `SettingsView.swift` and `SharedStateBridge.swift` remain in the target but are
+  **unreachable**, each with a warning at the top of the file. Deleting them means editing four
+  `project.pbxproj` sections apiece (PBXBuildFile, PBXFileReference, PBXGroup children,
+  PBXSourcesBuildPhase), and this machine cannot compile an Xcode project to prove the edit is sound.
+  A stale file is recoverable; a broken project file is not.
+- The smoke test lost two captures and the `--compose-preview` argument. It now takes three screenshots,
+  all of the same dashboard: iPhone light, iPhone dark, iPad light. The per-device pixel floors
+  (25 / 20, calibrated under the 86- and 81-colour native shells) collapsed into one floor,
+  `MIN_DISTINCT=300`, because the sparse screen they were guarding no longer exists. Keeping 25 would have meant keeping a
+  check that passes a dashboard missing 97% of its colours.
+
+**What is still unverified.** The iPad pass still captures portrait (see *Tooling pitfalls*: no
+`simctl` rotation, the app mask ignored by iPadOS window resizing, no `devicectl` orientation
+subcommand). Nothing here has been compiled — the Swift changes are only legible to a macOS toolchain —
+so the first evidence is the next `Simulator smoke` run, and the numbers in that run are what confirm
+the dashboard, not the shell, is what got photographed.
 
 ### Visual verification of the diagrams (how to reproduce)
 

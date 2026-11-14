@@ -2,6 +2,12 @@ import SwiftUI
 
 /// Standalone host for the shared Compose root.
 ///
+/// **Unreachable as of the Compose-root migration.** It existed to give the Compose tree a
+/// reachable door while the real panes were still SwiftUI placeholders: a toolbar button in
+/// `MainWorkspaceView` presented it as a `fullScreenCover`, and `--compose-preview` opened it
+/// directly so `simctl` could screenshot it. Compose is the product screen now, so the door and
+/// the argument are both gone and nothing constructs this view.
+///
 /// This is a **staging surface, not a product screen.** The shared module renders one pane today
 /// (`SettingsPane`); `HomePane` and `DetailPane` are still in the Android `:app` module. So instead
 /// of mounting Compose into one of the real panes — which would put a settings screen where the

@@ -2,6 +2,13 @@ import SwiftUI
 
 /// Native SwiftUI settings.
 ///
+/// **Superseded and unreachable as of the Compose-root migration.** It was written when the Compose
+/// side owned only one pane, and it bound to `SharedStateBridge`, which wraps `SharedStateStore` — a
+/// placeholder whose `updateAiSettings()` mutated a field and never touched a repository. Every edit
+/// made here was accepted, echoed back, and discarded. `SettingsPane` in the shared module talks to
+/// the real `ArchiveAssistantStateStore` and now owns the gear, so mounting this screen anywhere
+/// would reintroduce exactly the bug it had.
+///
 /// Deliberately native rather than Compose so it inherits iOS behavior for free:
 /// dynamic type, VoiceOver, keyboard focus, `SecureField`, and the system `Form` chrome.
 /// The Android build used only Material icons here (a gear and a back arrow), so replacing them

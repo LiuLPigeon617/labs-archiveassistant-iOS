@@ -1,96 +1,38 @@
 import SwiftUI
 
-/// Launch-time switches used by the CI simulator smoke test.
+/// The product screen: the shared Compose tree, edge to edge.
 ///
-/// These exist because `xcrun simctl launch` can pass arguments but cannot tap a toolbar button, so a
-/// screenshot of the migrated Compose tree would otherwise need a UI-automation target. Acting on
-/// these flags is the whole of their effect — they do not change what the app renders, only where it
-/// starts.
-enum LaunchOptions {
-  /// Open the shared Compose tree immediately instead of the two-column shell.
-  ///
-  /// Used by `.github/scripts/simulator-smoke.sh` to capture the migrated settings pane, and usable
-  /// by hand: `xcrun simctl launch booted com.lyihub.archiveassistant --compose-preview`.
-  static let opensComposePreview = ProcessInfo.processInfo.arguments.contains("--compose-preview")
-}
-
-/// iPad-first shell: a two-column split view. On iPhone this collapses to a single navigation stack
-/// automatically.
+/// Before this, the app opened on a `NavigationSplitView` whose two columns were both
+/// `UnmigratedPanePlaceholder`s, and the real Compose UI was reachable only by tapping a toolbar
+/// button that presented it as a `fullScreenCover`. That arrangement existed because no pane had been
+/// migrated: a split view with nothing to split was still better than a blank screen.
 ///
-/// Both columns are still placeholders — `HomePane` and `DetailPane` have not been migrated into
-/// `:shared` — so neither one hosts Compose yet. The migrated Compose tree is reachable through the
-/// toolbar's preview entry point instead; see `ComposeRootPreviewView` for why it is deliberately
-/// kept out of the panes.
+/// Now that `:shared` owns the dashboard, the settings screen and the briefing screen, the shell has
+/// nothing of its own to draw. It therefore hosts
+/// `ArchiveComposeHostingViewController` directly and gets out of the way:
+///
+/// - **No `NavigationStack` and no toolbar.** `HomePane` draws its own imperial header and its own
+///   settings entry (the Composable gear calls into the shared store, which then renders
+///   `SettingsPane`). A native navigation bar on top of that duplicated the title and put a second,
+///   differently-backed settings screen one tap away — the native one binds to `SharedStateBridge`;
+///   a placeholder store that silently discards every edit.
+/// - **`.ignoresSafeArea()`.** `ComposeUIViewController` applies the safe-area insets to the
+///   composition itself, so the hosting view must span the full window; clipping it to the safe area
+///   as well would subtract the inset twice.
+/// - **Explicit constraints still matter.** See `ArchiveComposeHostingViewController`: Compose reports
+///   no usable intrinsic size, so the representable is pinned by the hosting controller rather than
+///   self-sizing.
+///
+/// Nothing reads launch arguments here any more. `--compose-preview` used to present the Compose tree
+/// instead of the placeholder shell; with Compose behind no switch, the argument has no reader and was
+/// removed from `.github/scripts/simulator-smoke.sh` rather than left as a passing decoration.
 struct MainWorkspaceView: View {
-  @EnvironmentObject private var state: SharedStateBridge
-  @State private var showingSettings = false
-  @State private var showingComposePreview = LaunchOptions.opensComposePreview
-  @State private var columnVisibility: NavigationSplitViewVisibility = .doubleColumn
-
   var body: some View {
-    NavigationSplitView(columnVisibility: $columnVisibility) {
-      // Leading column: SwiftUI stand-in for the Compose-rendered topic list + parser input.
-      UnmigratedPanePlaceholder(title: "聚合拾遗", systemImage: "archivebox")
-        .ignoresSafeArea(edges: .top)
-        .navigationTitle("聚合拾遗")
-        .toolbar {
-          ToolbarItem(placement: .navigationBarTrailing) {
-            Button {
-              showingComposePreview = true
-            } label: {
-              Image(systemName: "square.on.square.dashed")
-                .accessibilityLabel("共享 Compose 预览")
-            }
-          }
-          ToolbarItem(placement: .navigationBarTrailing) {
-            Button {
-              showingSettings = true
-            } label: {
-              // Native SF Symbol: the Android build had exactly one gear icon here, so replacing
-              // it with the system icon costs no brand identity.
-              Image(systemName: "gearshape")
-                .accessibilityLabel("设置")
-            }
-          }
-        }
-    } detail: {
-      // Trailing column: SwiftUI stand-in for the Compose-rendered detail / memorial panes.
-      UnmigratedPanePlaceholder(title: "条目详情", systemImage: "doc.text.magnifyingglass")
-        .ignoresSafeArea(edges: .top)
-    }
-    .navigationSplitViewStyle(.balanced)
-    .sheet(isPresented: $showingSettings) {
-      SettingsView()
-        .environmentObject(state)
-    }
-    .fullScreenCover(isPresented: $showingComposePreview) {
-      ComposeRootPreviewView()
-        .environmentObject(state)
-    }
+    ArchiveComposeHostingViewController.Representable()
+      .ignoresSafeArea()
   }
 }
 
-/// Temporary stand-in for a pane that lives in the Android `:app` module and has not been migrated
-/// into `:shared` yet. Delete each use as its real Compose pane lands.
-private struct UnmigratedPanePlaceholder: View {
-  let title: String
-  let systemImage: String
-
-  var body: some View {
-    VStack(spacing: 12) {
-      Image(systemName: systemImage)
-        .font(.system(size: 44))
-        .foregroundStyle(.secondary)
-
-      Text(title)
-        .font(.title2)
-
-      Text("Compose 面板迁移中")
-        .font(.footnote)
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(uiColor: .systemGroupedBackground))
-  }
+#Preview {
+  MainWorkspaceView()
 }
-

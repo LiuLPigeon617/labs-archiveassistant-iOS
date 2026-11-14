@@ -4,13 +4,19 @@
 #
 # Builds nothing itself: the workflow stages SharedKit.xcframework and runs xcodebuild before calling
 # this. What this adds is the part that was missing - actually *looking* at the app. It installs the
-# simulator build, launches it straight into the migrated Compose tree, and captures screenshots of
-# the native shell and of the Compose dashboard in both appearances, first on an iPhone and then on an
-# iPad (the native shell is a `NavigationSplitView` and the project ships TARGETED_DEVICE_FAMILY 1,2).
+# simulator build, launches it, and captures screenshots of the Compose dashboard in both appearances,
+# first on an iPhone and then on an iPad.
 #
-# Which Compose pane is captured follows the app, not this script: the preview entry point opens on
-# `AppPane.TOPICS` (the dashboard). It used to open on settings back when settings was the only
-# migrated pane, which is why the captures are named for the home pane now.
+# Every capture is the same screen. The SwiftUI shell that used to sit above Compose (a
+# `NavigationSplitView` with two placeholder columns) is gone: `MainWorkspaceView` now mounts
+# `ArchiveComposeHostingViewController` and nothing else, so there is no native shell left to
+# photograph and no launch argument needed to reach Compose. The two devices are still both captured
+# because the dashboard reflows for a 2064pt-wide window and that reflow - along with the resource and
+# font loading behind it - is exactly what has never been seen on an iPad-sized canvas.
+#
+# Which pane is captured follows the app, not this script: `IosComposeRoot` builds the store with
+# `selectedPane = AppPane.TOPICS` (the dashboard). It used to open on settings back when settings was
+# the only migrated pane, which is why the captures are named for the home pane.
 #
 # The reason this exists: the shared Compose UI, the calligraphic fonts and the imperial palette were
 # only ever verified by a green compile. A compile cannot tell you whether a font rendered or whether
@@ -22,9 +28,7 @@
 # Inputs (environment):
 #   APP_PATH       path to the built .app (default: the Debug-iphonesimulator product)
 #   ARTIFACT_DIR   where screenshots and logs land (default: build/simulator-smoke)
-#   MIN_DISTINCT   override the per-device minimum distinct colours below, for BOTH devices
-#   IPHONE_MIN_DISTINCT  iPhone threshold (default: 25, calibrated on 1290x2796 captures)
-#   IPAD_MIN_DISTINCT    iPad threshold   (default: 20, calibrated on 2064x2752 captures)
+#   MIN_DISTINCT   override the minimum distinct colours below (default: 300, see the calibration note)
 #   RUN_IPAD       0 to skip the iPad pass (default: 1)
 #
 # Output: PNG screenshots, console/log captures, screenshot-checks.txt, summary.md in ARTIFACT_DIR.
@@ -33,19 +37,16 @@ set -euo pipefail
 
 BUNDLE_ID="com.lyihub.archiveassistant"
 PRODUCT_NAME="聚合拾遗"
-PREVIEW_ARGUMENT="--compose-preview"
 
 APP_PATH="${APP_PATH:-build/SimDerivedData/Build/Products/Debug-iphonesimulator/${PRODUCT_NAME}.app}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
-# Thresholds are calibrated per device against real captures, measured at 4-pixel sampling with 5-bit
+# The threshold is calibrated against real captures, measured at 4-pixel sampling with 5-bit
 # per-channel colour quantisation — exactly what check-screenshot.swift computes:
 #
 #   iPhone 16 Plus, 1290x2796 (run 39979857765)
-#     native SwiftUI shell                 86 distinct colours   <- the floor for this device
-#     Compose home, light / dark    1153 / 1154                  (settings era: 167 / 154)
+#     Compose dashboard, light / dark   1153 / 1154              (settings era: 167 / 154)
 #   iPad Pro 13-inch (M4), 2064x2752 (run 39979857765)
-#     native shell, light                  81 distinct colours   <- the floor here, and 5 BELOW the iPhone's
-#     Compose home, light                1177
+#     Compose dashboard, light           1177
 #   springboard fallback (either device)  2663 / 2822           <- a crashed app passes ANY threshold,
 #                                                                  which is why crashes are detected by
 #                                                                  crashes.txt and not by this check
@@ -54,15 +55,18 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-build/simulator-smoke}"
 # The springboard is the *colour-rich* failure: it must never be mistaken for success, which is the
 # whole reason the richer-looking numbers above are the failing ones.
 #
-# The two floors are not equal, so the two devices get their own threshold rather than sharing one:
-#   iPhone  25 — deliberately far from 86, so a sparse shell does not sit one shade away from failing.
-#   iPad    20 — 81 / 4 = 20.25, rounded down. That keeps the same order of headroom over the sparse
-#                shell that the iPhone value does (86 / 25 = 3.44), and stays ~7x above a blank
-#                screen's 3. Reusing 25 on the iPad was an under-claim no measurement ever backed;
-#                the first iPad capture showed the floors are not even equal.
-MIN_DISTINCT_OVERRIDE="${MIN_DISTINCT:-}"
-IPHONE_MIN_DISTINCT="${IPHONE_MIN_DISTINCT:-${MIN_DISTINCT_OVERRIDE:-25}}"
-IPAD_MIN_DISTINCT="${IPAD_MIN_DISTINCT:-${MIN_DISTINCT_OVERRIDE:-20}}"
+# Every capture is now the same screen, so there is one floor instead of one per device. It used to
+# be two (iPhone 25 over an 86-colour native shell, iPad 20 over an 81-colour one) because the sparse
+# SwiftUI chrome was the least-coloured thing on screen and the floor had to sit below it. With the
+# shell gone the least-coloured legitimate capture is the dashboard itself, so the old 25 was left
+# over-claiming nothing and under-claiming everything: it would have kept passing a dashboard that
+# lost 97% of its colours.
+#
+#   300 — 1153 / 300 = 3.84x headroom, slightly more than the 86 / 25 = 3.44 the iPhone value used to
+#         carry, and ~100x above a blank screen's 3. Low enough that a partially-drawn dashboard (one
+#         that lost its tiles or its list but still painted the palette) is not failed on grounds of
+#         taste, high enough that a mostly-empty screen cannot pass it.
+MIN_DISTINCT="${MIN_DISTINCT:-300}"
 RUN_IPAD="${RUN_IPAD:-1}"
 
 log() { echo; echo "=== $* ==="; }
@@ -313,23 +317,18 @@ capture_phase() { # <label> <console log> <settle seconds> <png name> [launch ar
 # Compose loads its fonts and resource pack on first composition, so the first frames are empty. The
 # sleeps are generous on purpose: a too-early screenshot would look like a rendering bug.
 COMPOSE_SETTLE_SECONDS=15
-NATIVE_SETTLE_SECONDS=8
 
-log "iPhone 1/3 native shell, light appearance"
+log "iPhone 1/2 dashboard, light appearance"
 xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
-capture_phase "native shell" "$ARTIFACT_DIR/console-native-shell.log" \
-  "$NATIVE_SETTLE_SECONDS" 01-native-shell-light.png
-
-log "iPhone 2/3 Compose tree, light appearance"
-capture_phase "Compose tree (light)" "$ARTIFACT_DIR/console-compose-light.log" \
-  "$COMPOSE_SETTLE_SECONDS" 02-compose-home-light.png "$PREVIEW_ARGUMENT"
+capture_phase "dashboard (light)" "$ARTIFACT_DIR/console-compose-light.log" \
+  "$COMPOSE_SETTLE_SECONDS" 01-compose-home-light.png
 
 # Relaunch rather than toggling appearance under a running app: this exercises the value
 # `isSystemInDarkTheme()` resolves at first composition, which is what the theme reads.
-log "iPhone 3/3 Compose tree, dark appearance"
+log "iPhone 2/2 dashboard, dark appearance"
 xcrun simctl ui "$UDID" appearance dark >/dev/null 2>&1 || true
-capture_phase "Compose tree (dark)" "$ARTIFACT_DIR/console-compose-dark.log" \
-  "$COMPOSE_SETTLE_SECONDS" 03-compose-home-dark.png "$PREVIEW_ARGUMENT"
+capture_phase "dashboard (dark)" "$ARTIFACT_DIR/console-compose-dark.log" \
+  "$COMPOSE_SETTLE_SECONDS" 02-compose-home-dark.png
 
 log "iPhone app log (last 3 minutes)"
 xcrun simctl spawn "$UDID" log show --last 3m --style compact \
@@ -340,9 +339,10 @@ wc -l < "$ARTIFACT_DIR/app-log-iphone.txt" | tr -d ' ' | sed 's/$/ lines capture
 # iPad
 # ---------------------------------------------------------------------------------------------------
 #
-# The native shell is a `NavigationSplitView` and the project ships `TARGETED_DEVICE_FAMILY = "1,2"`,
-# so the two-column layout only exists on iPad. Capturing it is the cheapest way to notice that the
-# split view or the hosting controller's orientation forwarding broke — neither shows up on a phone.
+# The project ships `TARGETED_DEVICE_FAMILY = "1,2"`, and the dashboard is a responsive Compose
+# layout, so a 2064pt-wide window is a genuinely different rendering: the five-tile grid and the
+# topic list reflow, and the calligraphic fonts are asked for at other sizes. Capturing it is the
+# cheapest way to notice that broke, because nothing on a phone would show it.
 #
 # Landscape is deliberately not attempted here. `simctl` has no rotation command at all, and the
 # app's own orientation mask is ignored on iPadOS' resizable-window model, so this pass captures
@@ -357,13 +357,9 @@ if [ "$RUN_IPAD" != "0" ]; then
 
   xcrun simctl ui "$UDID" appearance light >/dev/null 2>&1 || true
 
-  log "iPad 1/2 native shell, light appearance"
-  capture_phase "iPad native shell" "$ARTIFACT_DIR/console-ipad-native-shell.log" \
-    "$NATIVE_SETTLE_SECONDS" 04-ipad-native-shell-light.png
-
-  log "iPad 2/2 Compose tree, light appearance"
-  capture_phase "iPad Compose tree" "$ARTIFACT_DIR/console-ipad-compose-light.log" \
-    "$COMPOSE_SETTLE_SECONDS" 05-ipad-compose-home-light.png "$PREVIEW_ARGUMENT"
+  log "iPad 1/1 dashboard, light appearance"
+  capture_phase "iPad dashboard" "$ARTIFACT_DIR/console-ipad-compose-light.log" \
+    "$COMPOSE_SETTLE_SECONDS" 03-ipad-compose-home-light.png
 
   log "iPad app log (last 3 minutes)"
   xcrun simctl spawn "$UDID" log show --last 3m --style compact \
@@ -377,26 +373,15 @@ echo "no crash reports for $BUNDLE_ID in any phase."
 # Blank-screen check
 # ---------------------------------------------------------------------------------------------------
 
-# Captures 01-03 come from the iPhone runtime, 04-05 from the iPad one, so the threshold follows the
-# file name. The two floors differ (86 vs 81 distinct colours), and a single shared value would either
-# over-claim on the iPad or under-claim on the iPhone.
-threshold_for() {
-  case "$(basename "$1")" in
-    0[45]-*) echo "$IPAD_MIN_DISTINCT" ;;
-    *) echo "$IPHONE_MIN_DISTINCT" ;;
-  esac
-}
-
-log "screenshot pixel checks (iPhone >= $IPHONE_MIN_DISTINCT, iPad >= $IPAD_MIN_DISTINCT distinct colours)"
+log "screenshot pixel checks (>= $MIN_DISTINCT distinct colours)"
 : > "$ARTIFACT_DIR/screenshot-checks.txt"
 FAILED=0
 SHOT_COUNT=0
 for png in "$ARTIFACT_DIR"/*.png; do
   [ -e "$png" ] || die "no screenshots were captured at all."
   SHOT_COUNT=$((SHOT_COUNT + 1))
-  SHOT_MINIMUM="$(threshold_for "$png")"
-  echo "-- $(basename "$png") minimum: $SHOT_MINIMUM" >> "$ARTIFACT_DIR/screenshot-checks.txt"
-  swift .github/scripts/check-screenshot.swift "$png" "$SHOT_MINIMUM" 2>&1 \
+  echo "-- $(basename "$png") minimum: $MIN_DISTINCT" >> "$ARTIFACT_DIR/screenshot-checks.txt"
+  swift .github/scripts/check-screenshot.swift "$png" "$MIN_DISTINCT" 2>&1 \
     | tee -a "$ARTIFACT_DIR/screenshot-checks.txt" || FAILED=1
 done
 
@@ -416,7 +401,6 @@ done
     echo "| iPad | skipped (\`RUN_IPAD=0\`) |"
   fi
   echo "| host arch | \`$HOST_ARCH\` |"
-  echo "| launch argument | \`$PREVIEW_ARGUMENT\` |"
   echo "| screenshots | $SHOT_COUNT |"
   echo "| crash reports | none |"
   echo
@@ -424,10 +408,11 @@ done
   echo "only proves content was drawn - it cannot tell a correct layout from a broken one, so the"
   echo "images themselves are the real output."
   echo
-  echo "Thresholds are per device (iPhone >= $IPHONE_MIN_DISTINCT, iPad >= $IPAD_MIN_DISTINCT distinct"
-  echo "colours), because the two native shells do not measure the same: 86 on a 1290x2796 iPhone capture"
-  echo "against 81 on a 2064x2752 iPad one. Both are far above the 1-3 of a blank screen and far below"
-  echo "the 1153-1177 of the Compose dashboard."
+  echo "Every capture is the same screen, so one floor covers both devices: >= $MIN_DISTINCT distinct"
+  echo "colours. Calibrated captures measure 1153 / 1154 on a 1290x2796 iPhone and 1177 on a"
+  echo "2064x2752 iPad; a blank screen measures 1-3, and a crashed app falls through to the springboard,"
+  echo "which measures 2663-2822 and would pass any threshold - which is why crashes are judged by"
+  echo "crashes.txt instead of by this check."
   echo
   echo '```'
   cat "$ARTIFACT_DIR/screenshot-checks.txt"

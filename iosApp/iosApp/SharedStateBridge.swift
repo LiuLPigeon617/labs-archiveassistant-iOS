@@ -4,6 +4,15 @@ import SharedKit
 
 /// `ObservableObject` façade over the Kotlin shared state store.
 ///
+/// **Unreachable as of the Compose-root migration**, and deliberately not replaced: `store` is a
+/// `SharedStateStore`, whose own documentation calls it a minimal placeholder. Its writes go
+/// nowhere, so anything observing it renders a screen that cannot save. Compose reads
+/// `ArchiveAssistantStateStore` directly through `ArchiveAssistantRoot`, which is why the hosting
+/// path never needed this class in the first place.
+///
+/// Kept for what the notes below still teach about the bridge, which `IosPlatformBootstrap` and the
+/// picker host still rely on:
+///
 /// Kotlin `StateFlow` cannot be observed directly by SwiftUI, so this class subscribes through
 /// `IosAppBridge` and republishes into Combine. SwiftUI views bind to the `@Published` properties.
 ///
