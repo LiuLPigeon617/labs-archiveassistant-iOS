@@ -17,9 +17,24 @@ captures/
 *.aab
 *.zip
 
+# iOS build artifacts
+# SharedKit.xcframework is produced by the Xcode build phase from :shared, so it is
+# never committed; it is staged here only as a link target.
+iosApp/Frameworks/
+iosApp/iosApp.xcodeproj/xcuserdata/
+iosApp/iosApp.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcarchive
+
 # Agent workspace artifacts
 .omo/
 .sisyphus/
+.dsh-edit-review.json
+.dsh-edit-review-archive.json
+
+# Locally kept simulator screenshots (see screenshot/README.md). The images are multi-megabyte
+# artifacts of a CI run, not sources, so only the README that documents the convention is tracked.
+screenshot/*
+!screenshot/README.md
 
 # Kotlin
 .kotlin/

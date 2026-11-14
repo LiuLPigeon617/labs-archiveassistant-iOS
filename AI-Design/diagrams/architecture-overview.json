@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "聚合拾遗 iOS 架构总览",
+    "output": "AI-Design/diagrams/architecture-overview.html",
+    "animation": "trace",
+    "viewBox": [1030, 850],
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/LiuLPigeon617/labs-archiveassistant-iOS",
+      "revision": "8f8f3601c5768f8992a559df6d7a9034b14c083b"
+    }
+  },
+  "components": [
+    {
+      "id": "swiftui",
+      "type": "frontend",
+      "label": "SwiftUI 外壳",
+      "sublabel": "NavigationSplitView",
+      "pos": [100, 60],
+      "size": [150, 62],
+      "sources": [{ "path": "iosApp/iosApp/MainWorkspaceView.swift" }]
+    },
+    {
+      "id": "ios_shell",
+      "type": "frontend",
+      "label": "原生设置页",
+      "sublabel": "Form / SecureField",
+      "pos": [380, 60],
+      "size": [150, 62],
+      "sources": [{ "path": "iosApp/iosApp/SettingsView.swift" }]
+    },
+    {
+      "id": "compose_host",
+      "type": "frontend",
+      "label": "Compose 桥接",
+      "sublabel": "UIViewController 占位",
+      "pos": [600, 60],
+      "size": [150, 62],
+      "sources": [{ "path": "iosApp/iosApp/ComposeHostingViewController.swift" }]
+    },
+    {
+      "id": "shared_ui",
+      "type": "backend",
+      "label": "Compose UI 共享层",
+      "sublabel": "主题 / 组件 / 面板",
+      "pos": [600, 280],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/commonMain/kotlin/com/lyihub/archiveassistant/ui/screens/SettingsPane.kt" }]
+    },
+    {
+      "id": "shared_state",
+      "type": "backend",
+      "label": "状态仓库",
+      "sublabel": "ArchiveAssistantStateStore",
+      "pos": [600, 390],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/commonMain/kotlin/com/lyihub/archiveassistant/state/ArchiveAssistantStateStore.kt" }]
+    },
+    {
+      "id": "shared_domain",
+      "type": "backend",
+      "label": "领域与数据内核",
+      "sublabel": "六部制 / Ktor / 序列化",
+      "pos": [600, 500],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/commonMain/kotlin/com/lyihub/archiveassistant/domain/AiEngine.kt" }]
+    },
+    {
+      "id": "seams",
+      "type": "security",
+      "label": "expect/actual 接缝",
+      "sublabel": "文件 / 来源 / 日志",
+      "pos": [380, 390],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/commonMain/kotlin/com/lyihub/archiveassistant/platform/PlatformServices.kt" }]
+    },
+    {
+      "id": "android_actual",
+      "type": "backend",
+      "label": "Android 实现",
+      "sublabel": "OkHttp / res / filesDir",
+      "pos": [380, 500],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/androidMain/kotlin/com/lyihub/archiveassistant/platform/Platform.kt" }]
+    },
+    {
+      "id": "ios_actual",
+      "type": "backend",
+      "label": "iOS 实现",
+      "sublabel": "Darwin / NSBundle",
+      "pos": [380, 620],
+      "size": [150, 62],
+      "sources": [{ "path": "shared/src/iosMain/kotlin/com/lyihub/archiveassistant/platform/Platform.kt" }]
+    },
+    {
+      "id": "remote_ai",
+      "type": "external",
+      "label": "远程 AI 服务",
+      "sublabel": "OpenAI / Anthropic / Gemini",
+      "pos": [820, 620],
+      "size": [150, 62]
+    },
+    {
+      "id": "ci",
+      "type": "cloud",
+      "label": "GitHub Actions",
+      "sublabel": "macos-15 未签名 IPA",
+      "pos": [100, 470],
+      "size": [150, 62],
+      "sources": [{ "path": ".github/workflows/ios-build.yml" }]
+    },
+    {
+      "id": "legacy_app",
+      "type": "backend",
+      "label": "遗留 Android 应用",
+      "sublabel": ":app 冻结 / 不依赖 :shared",
+      "pos": [100, 590],
+      "size": [150, 62]
+    },
+    {
+      "id": "desktop_actual",
+      "type": "backend",
+      "label": "desktop 校验目标",
+      "sublabel": "jvm(desktop) 编译与测试",
+      "pos": [100, 710],
+      "size": [150, 62]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "iosApp / Swift 与 Xcode",
+      "wraps": ["swiftui", "ios_shell", "compose_host"]
+    },
+    {
+      "kind": "region",
+      "label": "shared KMP 共享内核",
+      "wraps": ["shared_ui", "shared_state", "shared_domain", "seams"]
+    }
+  ],
+  "connections": [
+    { "from": "swiftui", "to": "ios_shell", "label": "设置入口", "variant": "emphasis" },
+    { "from": "ios_shell", "to": "compose_host", "label": "Compose 面板" },
+    { "from": "compose_host", "to": "shared_ui", "label": "SharedKit", "labelDy": 40 },
+    { "from": "shared_ui", "to": "shared_state", "label": "读写状态", "labelDy": 30 },
+    { "from": "shared_state", "to": "shared_domain", "label": "分类与总结", "labelDy": 30 },
+    {
+      "from": "seams",
+      "to": "shared_state",
+      "label": "文件 / 日志",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "from": "seams",
+      "to": "android_actual",
+      "label": "Android",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": -58,
+      "labelDy": 24
+    },
+    {
+      "from": "android_actual",
+      "to": "ios_actual",
+      "label": "同组接缝的 actual",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 100,
+      "labelDy": 30
+    },
+    { "from": "shared_domain", "to": "remote_ai", "label": "HTTPS", "variant": "emphasis" },
+    {
+      "from": "desktop_actual",
+      "to": "ci",
+      "label": "desktopTest 快速失败",
+      "fromSide": "right",
+      "toSide": "right",
+      "route": "orthogonal-v",
+      "via": [[325, 741], [325, 501]]
+    },
+    { "from": "ci", "to": "legacy_app", "label": "打包未签名 IPA", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "route": "straight", "labelDx": 84, "labelDy": 30 }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "一处内核，四处源集",
+      "items": [
+        "commonMain 承载领域、数据、状态与 Compose UI",
+        "androidMain / iosMain / desktopMain 各自实现同一组接缝",
+        "desktop 目标只为在 Windows 上编译与测试，不发布"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "已打通与未打通",
+      "items": [
+        "状态仓库、远程 AI、设置页已迁入共享内核",
+        "Compose 桥接仍是占位视图，未挂真实入口点",
+        "首页与回忆录阅读器仍在 :app，未迁入"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "迁移期的硬约束",
+      "items": [
+        ":app 不依赖 :shared，复制屏幕不会破坏旧应用",
+        "iOS 编译与签名只能在 macOS 上完成",
+        "CI 产出未签名 IPA，仅用于验证"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# Normalize line endings on checkin; always LF inside the repository.
+# iOS builds happen on macOS while some development happens on Windows,
+# so pinning this avoids whole-file diffs caused by CRLF/LF churn.
+* text=auto eol=lf
+
+# Binary assets must never be normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.jar binary
+*.keystore binary
+*.litertlm binary

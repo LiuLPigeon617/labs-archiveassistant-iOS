@@ -1,0 +1,109 @@
+package com.lyihub.archiveassistant.platform
+
+/**
+ * Handlers implemented in Swift and injected at app launch.
+ *
+ * File I/O and bundle access are delegated to Swift rather than written against the Kotlin/Native
+ * Foundation bindings: Swift has first-class `FileManager` and `Bundle` APIs, which removes an
+ * entire class of cinterop signature errors and the need for `ExperimentalForeignApi` opt-ins.
+ *
+ * Payloads cross the boundary as Base64 strings rather than `ByteArray`. Swift's `KotlinByteArray`
+ * interop requires per-element accessors and is easy to get subtly wrong; Base64 uses plain
+ * `String` on both sides, with `Data(base64Encoded:)` on the Swift side.
+ *
+ * Swift installs these from `AppDelegate.application(_:didFinishLaunchingWithOptions:)` via
+ * `IosPlatformBootstrap.install()`.
+ */
+object IosNativeBridge {
+  var exists: ((path: String) -> Boolean)? = null
+  var writeBase64: ((path: String, base64: String) -> Unit)? = null
+  var readBase64: ((path: String) -> String?)? = null
+  var itemsDir: (() -> String)? = null
+  var modelsDir: (() -> String)? = null
+
+  /** Private directory for persisted state payloads; a subdirectory of the app support directory. */
+  var stateDir: (() -> String)? = null
+  var bundleResourcePath: ((name: String, ext: String) -> String?)? = null
+
+  /**
+   * Presents the system document picker and reports the chosen path, or null when cancelled.
+   *
+   * `UIDocumentPickerViewController` must be presented from a UIViewController, which Kotlin/Native
+   * cannot reach safely from shared code, so the picker lives entirely in Swift and this slot only
+   * carries the callback. A null slot means "no picker installed": callers see a cancelled pick.
+   */
+  var pickFile: ((extensions: List<String>, callback: (String?) -> Unit) -> Unit)? = null
+
+  /** True once Swift has installed the minimum set of handlers. */
+  val isReady: Boolean
+    get() = exists != null && writeBase64 != null && readBase64 != null && itemsDir != null
+
+  internal fun callExists(path: String): Boolean = exists?.invoke(path) ?: false
+
+  internal fun callWrite(path: String, bytes: ByteArray) {
+    val handler = writeBase64
+    if (handler == null) {
+      println("[IosNativeBridge] writeBase64 not installed; dropping write to $path")
+      return
+    }
+    handler(path, bytes.toBase64())
+  }
+
+  internal fun callRead(path: String): ByteArray? = readBase64?.invoke(path)?.fromBase64()
+}
+
+private class IosLogger : Logger {
+  override fun d(tag: String, message: String) = println("[$tag] D: $message")
+
+  override fun w(tag: String, message: String) = println("[$tag] W: $message")
+
+  override fun e(tag: String, message: String, throwable: Throwable?) {
+    println("[$tag] E: $message ${throwable?.message.orEmpty()}")
+  }
+}
+
+actual fun platformLogger(): Logger = IosLogger()
+
+actual fun platformFileStore(): PlatformFileStore = IosFileStore()
+
+private class IosFileStore : PlatformFileStore {
+  override val itemsDir: String
+    get() = IosNativeBridge.itemsDir?.invoke().orEmpty()
+
+  override val modelsDir: String
+    get() = IosNativeBridge.modelsDir?.invoke().orEmpty()
+
+  override val stateDir: String
+    get() = IosNativeBridge.stateDir?.invoke().orEmpty()
+
+  override suspend fun exists(path: String): Boolean = IosNativeBridge.callExists(path)
+
+  override suspend fun writeBytes(path: String, bytes: ByteArray) =
+    IosNativeBridge.callWrite(path, bytes)
+
+  override suspend fun readBytes(path: String): ByteArray? = IosNativeBridge.callRead(path)
+}
+
+/**
+ * Locates a bundled resource and copies it into private storage.
+ *
+ * Swift resolves the resource path through `Bundle.main`; Kotlin then copies the bytes through the
+ * shared [PlatformFileStore]. All Foundation interaction stays on the Swift side.
+ */
+actual class BundledAssetReader actual constructor() {
+  actual suspend fun materialize(assetName: String, outputFileName: String): String? {
+    val store = platformFileStore()
+    if (store.itemsDir.isBlank()) return null
+
+    val destination = "${store.itemsDir}/$outputFileName"
+    if (store.exists(destination)) return destination
+
+    val name = assetName.substringBeforeLast('.')
+    val ext = assetName.substringAfterLast('.', "")
+    val sourcePath = IosNativeBridge.bundleResourcePath?.invoke(name, ext) ?: return null
+    val bytes = IosNativeBridge.callRead(sourcePath) ?: return null
+
+    store.writeBytes(destination, bytes)
+    return destination
+  }
+}
