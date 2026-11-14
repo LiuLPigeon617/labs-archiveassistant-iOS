@@ -33,6 +33,16 @@ interface PlatformFileStore {
   /** Directory for downloaded/inference model files. */
   val modelsDir: String
 
+  /**
+   * Directory for small key/value payloads (persisted archive topics/items, AI engine settings).
+   *
+   * Separate from [itemsDir] on purpose: item documents are user-visible exports that can be deleted
+   * or re-materialised from bundled assets, while these files are the only copy of the user's data and
+   * are written on nearly every edit. Blank means "this build has nowhere to persist" — callers must
+   * then behave exactly as they did before persistence existed, not write into an empty path.
+   */
+  val stateDir: String
+
   suspend fun exists(path: String): Boolean
 
   suspend fun writeBytes(path: String, bytes: ByteArray)

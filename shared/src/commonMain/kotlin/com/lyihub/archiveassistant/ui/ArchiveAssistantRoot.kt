@@ -12,7 +12,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.lyihub.archiveassistant.data.FileAiEngineSettingsRepository
+import com.lyihub.archiveassistant.data.FileAppDataRepository
 import com.lyihub.archiveassistant.domain.AppPane
+import com.lyihub.archiveassistant.state.ArchiveAssistantState
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
 import com.lyihub.archiveassistant.ui.screens.HomePane
 import com.lyihub.archiveassistant.ui.screens.MemorialBriefingPane
@@ -181,4 +184,22 @@ private fun NotYetMigratedPane() {
   }
 }
 
-private fun defaultStateStore(): ArchiveAssistantStateStore = ArchiveAssistantStateStore()
+/**
+ * The store every entry point starts from, with persistence wired in.
+ *
+ * The repositories are file-backed in `commonMain`: "where the bytes go" is the only platform
+ * difference left, and [com.lyihub.archiveassistant.platform.PlatformFileStore.stateDir] already
+ * abstracts that. Passing them here (rather than inside the store's defaults) keeps the store
+ * constructible in tests without touching the real file system.
+ *
+ * `internal` so the iOS entry point ([com.lyihub.archiveassistant.ui.IosComposeRoot]) shares this one
+ * definition instead of assembling a second store of its own that would silently stop persisting.
+ */
+internal fun defaultStateStore(
+  initialPane: AppPane = AppPane.TOPICS
+): ArchiveAssistantStateStore =
+  ArchiveAssistantStateStore(
+    initialState = ArchiveAssistantState(selectedPane = initialPane),
+    appDataRepository = FileAppDataRepository(),
+    aiSettingsRepository = FileAiEngineSettingsRepository(),
+  )

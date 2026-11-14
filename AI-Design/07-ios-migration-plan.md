@@ -966,12 +966,59 @@ how it is drawn; let the memorial covers arrive with the memorial-reader refacto
 - `:app` does **not** depend on `:shared` (`app/build.gradle.kts` declares no project dependency).
   Copied screens cannot break the legacy app, but it also means nothing in `:shared` is exercised by
   the Android app — the shared UI is verified by compilation and tests only.
-- `AiEngineSettingsRepository` in `:shared` exposes only `save`. Presets are therefore not yet
-  persisted on any platform even though the codec is ready; whoever wires the repositories should
-  extend that interface rather than add a second storage path.
+- ~~`AiEngineSettingsRepository` in `:shared` exposes only `save`.~~ **Closed** — the interface now
+  has `load()` as well, and the startup path reads the stored AI settings *before* restoring the
+  local-model state, because that state is keyed by `aiSettings.localModelId`: restoring first would
+  make every launch ask the user to download the model again.
 - The plan's `multiplatform-settings` row in "Library swaps" is still *planned*, not done:
   no shared code calls it yet.
 
+### Data persistence landed, and the seam it needed
+
+Before this change the app had **no persistence at all**: `ArchiveAssistantStateStore` declares
+`appDataRepository` and `aiSettingsRepository` with `null` defaults, and `loadPersistedStateAsync()`
+(`:120`) and `saveData()` (`:157`) both begin with `?: return`, so every launch seeded the sample data
+again and every edit was dropped when the app closed. The Android `:app` module has the real thing;
+`:shared` had only the interfaces.
+
+What landed:
+
+- `shared/src/commonMain/.../data/AppDataCodec.kt` — the `org.json` codec from
+  `app/src/main/java/com/lyihub/archiveassistant/data/AppDataPreferences.kt` rewritten on
+  `kotlinx.serialization.json`. It is hand-rolled rather than `@Serializable` on the domain classes for
+  two reasons: the wire format must stay byte-compatible with what Android already wrote (the key names
+  are asserted in tests), and `Topic`/`KnowledgeItem` are UI-facing model types that should not grow
+  serialization annotations to serve one storage format.
+- `shared/src/commonMain/.../data/AppDataRepositories.kt` — `FileAppDataRepository` (one file per
+  payload: `app_topics_json.json`, `app_items_json.json`) and `FileAiEngineSettingsRepository`
+  (`ai_engine_settings.json`).
+- `PlatformFileStore.stateDir` — a new platform seam, plus implementations on all three targets
+  (iOS through `IosNativeBridge.stateDir`, desktop under the temp root, Android under `filesDir`) and
+  the matching directory creation in `iosApp/iosApp/IosPlatformBootstrap.swift`.
+- `AiEngineSettingsRepository.load()` — the interface only had `save`.
+
+Three decisions worth keeping:
+
+1. **`stateDir` is not `itemsDir`.** Item files are re-exportable artefacts; the archive snapshot is
+   the only copy of what the user typed, so it gets its own directory and a possibly different
+   lifetime.
+2. **A blank `stateDir` disables persistence rather than falling back to a relative path.** iOS reports
+   blank before Swift installs the bridge handler; writing `./app_topics_json.json` into whatever the
+   process cwd happens to be would be worse than not persisting.
+3. **AI settings load *before* the local-model state is restored.** `restoreLocalModelState()` keys off
+   `aiSettings.localModelId`; restoring first would leave the app thinking no model is installed and
+   re-prompting for a download on every launch.
+
+Decoding is deliberately strict about required keys and lenient about optional ones: a missing
+`iconColor` is corruption (silently defaulting it would overwrite the user's archive with defaults on
+the next save), while a missing or empty `sourceUrl` is `null` (that is how the Android encoder writes
+absent optionals), and an unknown `documentFormat` becomes `null` rather than corruption so a future
+Android format does not brick the iOS app.
+
+Verified with `:shared:compileKotlinDesktop :shared:desktopTest`: 68 tests, 0 failures, including 15 new
+codec tests (`AppDataCodecTest`) and 9 new repository tests (`FileAppDataRepositoryTest`). **Not yet verified on a device** — that the file lands in the
+app-support directory and survives a relaunch is exactly what the iOS target cannot be checked for
+locally; it needs a CI run and a person to quit and reopen the app.
 ### The Compose root exists now, and what it deliberately is not
 
 Added in `be21549`. The module previously had no composition root at all — the only one was
@@ -1004,8 +1051,16 @@ which is why older sections of this document read as if settings were the whole 
 The store needs no dependency injection to run: `ArchiveAssistantStateStore`'s constructor is
 platform-free (every parameter has a default and the defaults seed the built-in sample data). Note the
 Android root passes `androidContext`, `AppDataRepository`, `AiEngineSettingsRepository`,
-`OkHttpModelDownloadManager` and `LocalInferenceConnection`; the two repositories are what would
-persist data, and #6/#7 above are what supply the rest.
+`OkHttpModelDownloadManager` and `LocalInferenceConnection`.
+
+**The two repository slots are now filled on every target** (`defaultStateStore()` in
+`ArchiveAssistantRoot.kt` is `internal` exactly so `IosComposeRoot` can call it):
+`FileAppDataRepository` and `FileAiEngineSettingsRepository` both write JSON under the new
+`PlatformFileStore.stateDir` seam. That seam is deliberately separate from `itemsDir` — item documents
+are re-exportable artefacts, whereas the archive snapshot is the only copy of what the user typed. A
+blank `stateDir` (Swift has not installed the bridge yet) disables persistence instead of writing to a
+relative path, so the app degrades to its old amnesiac behaviour rather than scattering files. See
+"Data persistence landed" below.
 
 `shared/src/iosMain/kotlin/com/lyihub/archiveassistant/ui/ArchiveRootViewController.kt` is the
 Swift-facing factory:

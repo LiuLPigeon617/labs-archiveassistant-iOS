@@ -98,7 +98,10 @@ class ArchiveAssistantStateStore(
   init {
     loadPersistedStateAsync()
     materializeSeedAssets()
-    restoreLocalModelStateAsync()
+    // Settings must be read before the model state is restored: restoreLocalModelState keys off
+    // aiSettings.localModelId, and without the stored value a user who had picked the local engine
+    // would be shown "please download the model again" on every launch.
+    loadAiSettingsThenRestoreModelState()
     observeLocalModelState()
   }
 
@@ -113,8 +116,24 @@ class ArchiveAssistantStateStore(
     }
   }
 
-  private fun restoreLocalModelStateAsync() {
-    scope.launch { restoreLocalModelState() }
+  private fun loadAiSettingsThenRestoreModelState() {
+    scope.launch {
+      loadAiSettings()
+      restoreLocalModelState()
+    }
+  }
+
+  /**
+   * Merges the persisted settings into the in-memory default.
+   *
+   * Only fields that were actually stored are taken; a null repository or an unreadable file leaves
+   * the defaults in place, which is the behaviour the app had before this existed.
+   */
+  private suspend fun loadAiSettings() {
+    val repo = aiSettingsRepository ?: return
+    val stored = repo.load() ?: return
+    if (stored == state.aiSettings) return
+    state = state.copy(aiSettings = stored)
   }
 
   private fun loadPersistedStateAsync() {

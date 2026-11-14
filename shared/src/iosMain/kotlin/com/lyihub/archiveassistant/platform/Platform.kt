@@ -20,6 +20,9 @@ object IosNativeBridge {
   var readBase64: ((path: String) -> String?)? = null
   var itemsDir: (() -> String)? = null
   var modelsDir: (() -> String)? = null
+
+  /** Private directory for persisted state payloads; a subdirectory of the app support directory. */
+  var stateDir: (() -> String)? = null
   var bundleResourcePath: ((name: String, ext: String) -> String?)? = null
 
   /**
@@ -69,6 +72,9 @@ private class IosFileStore : PlatformFileStore {
 
   override val modelsDir: String
     get() = IosNativeBridge.modelsDir?.invoke().orEmpty()
+
+  override val stateDir: String
+    get() = IosNativeBridge.stateDir?.invoke().orEmpty()
 
   override suspend fun exists(path: String): Boolean = IosNativeBridge.callExists(path)
 

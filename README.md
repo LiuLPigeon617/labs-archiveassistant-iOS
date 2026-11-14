@@ -22,6 +22,7 @@ Android 侧（`:app`，本分支内保持冻结，作为参照实现）：
 - 状态层已完整迁入 `shared/src/commonMain`：`ArchiveAssistantState` 与 `ArchiveAssistantStateStore` 已不依赖任何 Android API，通过 `platformFileStore`、`BundledAssetReader`、`platformLogger`、`resolveContentSource` 等接缝获取平台能力。
 - 设置页已迁入共享内核：`SettingsPane` 及其两个数据依赖（AI 端点延迟测试、AI 引擎预设）、返回按钮组件均为跨平台实现。
 - 首页（仪表盘）已迁入共享内核：`shared/src/commonMain/.../ui/screens/HomePane.kt` 逐段对应 Android 版 1493 行，六个 Android 接缝（`R.drawable` 整型 id、`painterResource`、Material 图标、`System.currentTimeMillis()`、`toChineseCount`、两个书法字体常量）已全部替换为跨平台写法；设置按钮与搜索清空图标改为本地 Canvas 绘制（模块刻意不依赖 Material Icons）。iOS 侧已由持续集成截图验证渲染，不是只「编译通过」；移植中唯一一次 iOS 编译失败是 `Math.PI`（Kotlin/Native 没有 `java.lang.Math`），已改为 `kotlin.math.PI`。
+- 数据持久化已跨平台化：`app_topics_json` / `app_items_json` / `ai_engine_settings.json` 三份 JSON 的编解码（`AppDataCodec`）与读写（`FileAppDataRepository`、`FileAiEngineSettingsRepository`）全部落在 `commonMain`，键名与原 Android 的 `org.json` 实现逐字一致，因此旧数据换平台后仍能读回；`PlatformFileStore` 新增 `stateDir` 接缝（iOS 走原生桥、desktop 走临时目录、Android 走 `filesDir`），`stateDir` 为空表示本构建无处落盘，此时退化成「关掉 App 数据全丢」的旧行为而不是崩掉。三平台均已接上，`ArchiveAssistantRoot` 与 `IosComposeRoot` 的共同构造入口默认注入这两个仓库。AI 引擎设置现在也会在启动时读回——否则用户每次开 App 都要重新选一次本地模型。
 - 网络与时间已跨平台化：延迟测试改用 Ktor 与 `TimeSource.Monotonic`，预设序列化改为纯字符串读写，不再依赖 DataStore 类型。
 - 资源流水线已跨平台化：美术资源与字体经由 `composeResources` 提供，`archivePainter` 与 `archiveFontFamily` 已是单一 `commonMain` 实现，不再使用 `expect`/`actual`。
 - 已入包资源：28 个图形资源（3,376,501 字节，约 3.4 MB，含首页 5 张 tile 的重编码版本与 10 个 XML vector）与 2 个书法字体（12,917,432 字节，约 12.9 MB），合计约 16.3 MB。

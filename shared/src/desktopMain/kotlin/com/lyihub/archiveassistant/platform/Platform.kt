@@ -28,6 +28,9 @@ private class JvmFileStore : PlatformFileStore {
   override val modelsDir: String
     get() = File(root, "models").also { it.mkdirs() }.absolutePath
 
+  override val stateDir: String
+    get() = File(root, "state").also { it.mkdirs() }.absolutePath
+
   override suspend fun exists(path: String): Boolean = File(path).exists()
 
   override suspend fun writeBytes(path: String, bytes: ByteArray) {

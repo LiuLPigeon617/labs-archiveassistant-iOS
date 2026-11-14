@@ -25,14 +25,20 @@ enum IosPlatformBootstrap {
 
     let itemsDir = (appSupport as NSString).appendingPathComponent("items")
     let modelsDir = (appSupport as NSString).appendingPathComponent("models")
+    // Persisted archive state (topics, items, AI settings). Kept apart from items/ because item
+    // documents are re-materialisable exports, while this directory holds the only copy of the
+    // user's archive.
+    let stateDir = (appSupport as NSString).appendingPathComponent("state")
     try? fm.createDirectory(atPath: itemsDir, withIntermediateDirectories: true)
     try? fm.createDirectory(atPath: modelsDir, withIntermediateDirectories: true)
+    try? fm.createDirectory(atPath: stateDir, withIntermediateDirectories: true)
 
     // A Kotlin `object` is exported to Swift as a class with a `shared` singleton accessor.
     let bridge = IosNativeBridge.shared
 
     bridge.itemsDir = { itemsDir }
     bridge.modelsDir = { modelsDir }
+    bridge.stateDir = { stateDir }
 
     bridge.exists = { path in
       // Kotlin `Boolean` maps to `KotlinBoolean` in Swift, not to `Bool`.

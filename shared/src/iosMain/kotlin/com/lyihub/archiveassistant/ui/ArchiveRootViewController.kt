@@ -2,7 +2,6 @@ package com.lyihub.archiveassistant.ui
 
 import androidx.compose.ui.window.ComposeUIViewController
 import com.lyihub.archiveassistant.domain.AppPane
-import com.lyihub.archiveassistant.state.ArchiveAssistantState
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
 import platform.UIKit.UIViewController
 
@@ -35,11 +34,7 @@ object IosComposeRoot {
    * the sole migrated pane.
    */
   fun makeViewController(): UIViewController =
-    createArchiveRootViewController(
-      ArchiveAssistantStateStore(
-        initialState = ArchiveAssistantState(selectedPane = AppPane.TOPICS)
-      )
-    )
+    createArchiveRootViewController(defaultStateStore(initialPane = AppPane.TOPICS))
 }
 
 private fun createArchiveRootViewController(

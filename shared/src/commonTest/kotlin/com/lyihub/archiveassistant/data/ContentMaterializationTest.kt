@@ -25,6 +25,7 @@ class ContentMaterializationTest {
 
     override val itemsDir: String = "/items"
     override val modelsDir: String = "/models"
+    override val stateDir: String = "/state"
 
     override suspend fun exists(path: String): Boolean = path in contents
 

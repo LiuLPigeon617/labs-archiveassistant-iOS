@@ -27,4 +27,13 @@ data class AppDataSnapshot(
 
 interface AiEngineSettingsRepository {
   suspend fun save(settings: AiEngineSettings)
+
+  /**
+   * Reads back the last saved settings, or null when nothing usable is stored.
+   *
+   * Null and "file is corrupt" are not distinguished: settings are a small preference blob whose
+   * defaults are always valid, so the store treats both as "keep the default" and the next edit
+   * overwrites the bad file. Archive data is the opposite case and does report corruption.
+   */
+  suspend fun load(): AiEngineSettings?
 }
