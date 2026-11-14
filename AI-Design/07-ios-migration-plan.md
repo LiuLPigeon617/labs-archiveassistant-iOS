@@ -172,6 +172,14 @@ targeting macOS arm64 runners may experience longer queue times`; each job sat q
 and was cancelled without ever starting a step. Re-dispatch with
 `gh workflow run ios-build.yml --ref <branch>` rather than hunting a code defect in those runs.
 
+**The next green run will not look like any of those.** `c9b15a7` deleted the SwiftUI shell, so the
+smoke test now captures three screens of one screen (iPhone light, iPhone dark, iPad light) instead of
+five of two, and the pixel floor is a single `MIN_DISTINCT=300` instead of the 25 / 20 pair that was
+calibrated to sit under the 86- and 81-colour native shells. Both changes are unverified: the Swift
+diff is only legible to a macOS toolchain, and this commit was written while `github.com` was
+unreachable from the workstation, so it had not been pushed when it was authored. Treat the first run
+that includes it as the evidence, not the local build.
+
 One operational caveat learned the hard way: **this repository's artifact retention is short** — the
 screenshots from run 37300716982 were already gone (`Artifact has expired`, HTTP 410) when inspected on
 2026-10-23, 18 days later. The pixel statistics survive only in that run's job log; if a capture needs to
@@ -929,7 +937,8 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
    behind, unreferenced). What remains is art referenced *only* by screens that have not been
    migrated yet. Read the size finding below before copying any of it.
 5. ~~Replace the placeholder hosted by `ComposeHostingViewController` with the real Compose entry
-   point …~~ **Done in `be21549`** — see "The Compose root exists now" below.
+   point …~~ **Done in `be21549`**, and the SwiftUI shell around it was deleted in `c9b15a7` — see
+   "The Compose root exists now" below.
 6. ~~Port `ArchiveAssistantTheme` into `commonMain` so `MaterialTheme.colorScheme` stops resolving to
    the Material 3 baseline.~~ **Done in `f402b86`** (both schemes and the full type scale).
 7. Wire `LiteRT-LM` through its Swift API behind the existing `LocalLlmEngine` interface.
@@ -1081,11 +1090,7 @@ Swift-facing factory:
 ```kotlin
 object IosComposeRoot {
   fun makeViewController(): UIViewController =
-    createArchiveRootViewController(
-      ArchiveAssistantStateStore(
-        initialState = ArchiveAssistantState(selectedPane = AppPane.TOPICS)
-      )
-    )
+    createArchiveRootViewController(defaultStateStore(initialPane = AppPane.TOPICS))
 }
 ```
 
@@ -1126,45 +1131,15 @@ cannot be built, so the deletion is a separate, verifiable change rather than a 
 `onChooseModelFile = {}` is left inert on purpose: choosing a model file needs a native file picker
 that does not exist yet, and a callback that pretends to work is worse than one that is visibly absent.
 
-### The Compose root is the product screen now
-
-Before this change the shared module rendered, but only behind a door: `MainWorkspaceView` was a
-`NavigationSplitView` whose two columns were `UnmigratedPanePlaceholder`s, and the Compose tree was
-reachable through a toolbar button that presented `ComposeRootPreviewView` as a `fullScreenCover`.
-The smoke test launched with `--compose-preview` to open that door without a tap, which is why every
-screenshot from run 39979857765 onward had a native-shell capture next to it: there were genuinely two
-different screens to photograph.
-
-What made the door wrong was not its shape but what stood behind the other one. The toolbar gear opened
-a native `SettingsView` bound to `SharedStateBridge`, which wraps `SharedStateStore` — a placeholder
-whose `updateAiSettings()` assigned a field and whose `startModel()`/`stopModel()` had empty bodies.
-Every edit it accepted was echoed back and dropped. Two settings screens existed, and the reachable one
-was the one that could not save.
-
-So the shell was deleted rather than shrunk:
-
-- `MainWorkspaceView.swift` is now three lines of body — the representable with `.ignoresSafeArea()` —
-  and no navigation container, no toolbar, no sheet. `HomePane` draws its own imperial header and its
-  own gear, and that gear reaches `SettingsPane`, which talks to the real store.
-- `ArchiveAssistantApp.swift` dropped its `@StateObject`/`environmentObject`. It keeps the
-  `@UIApplicationDelegateAdaptor` — without it SwiftUI never calls `AppDelegate` and the Kotlin bridge
-  never receives its implementations.
-- `ContentView.swift`, `SettingsView.swift` and `SharedStateBridge.swift` remain in the target but are
-  **unreachable**, each with a warning at the top of the file. Deleting them means editing four
-  `project.pbxproj` sections apiece (PBXBuildFile, PBXFileReference, PBXGroup children,
-  PBXSourcesBuildPhase), and this machine cannot compile an Xcode project to prove the edit is sound.
-  A stale file is recoverable; a broken project file is not.
-- The smoke test lost two captures and the `--compose-preview` argument. It now takes three screenshots,
-  all of the same dashboard: iPhone light, iPhone dark, iPad light. The per-device pixel floors
-  (25 / 20, calibrated under the 86- and 81-colour native shells) collapsed into one floor,
-  `MIN_DISTINCT=300`, because the sparse screen they were guarding no longer exists. Keeping 25 would have meant keeping a
-  check that passes a dashboard missing 97% of its colours.
-
-**What is still unverified.** The iPad pass still captures portrait (see *Tooling pitfalls*: no
-`simctl` rotation, the app mask ignored by iPadOS window resizing, no `devicectl` orientation
-subcommand). Nothing here has been compiled — the Swift changes are only legible to a macOS toolchain —
-so the first evidence is the next `Simulator smoke` run, and the numbers in that run are what confirm
-the dashboard, not the shell, is what got photographed.
+**What the smoke test can no longer prove, and what the next run is for.** With the shell gone there
+is only one screen to photograph, so the two native-shell captures and the `--compose-preview` argument
+that reached the old staging surface are both gone: the script now takes three shots — iPhone light,
+iPhone dark, iPad light — and checks a single floor, `MIN_DISTINCT=300`, instead of the 25 / 20 pair
+that was calibrated to sit *under* the 86- and 81-colour shells. Those old floors had become a check
+that passes a dashboard missing 97% of its colours. None of this has been compiled: the Swift changes
+are only legible to a macOS toolchain, so the next `Simulator smoke` run is the first evidence that
+what gets photographed is the dashboard rather than a shell around it. The iPad capture is still
+portrait, for the *Tooling pitfalls* reasons above.
 
 ### Visual verification of the diagrams (how to reproduce)
 
