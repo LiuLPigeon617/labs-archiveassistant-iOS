@@ -606,12 +606,19 @@ materialization) before any conversion, so it is a work item of its own rather t
 pass.
 
 **All four abstractions now exist** — see *The four `DetailPane` seams are now shared
-abstractions*, further down; what is left is the conversion itself.
+abstractions*, further down.
+
+**Update: the display half is now migrated.** `shared/.../ui/screens/DetailPane.kt` carries the first
+604 lines of the Android file — the memorial wall (two-column masonry), the tag filter bar, the empty
+shelf and the decorative corner. The remaining three composables stay in `:app` for now:
+`AddItemDialog` and `ClipboardDialog` (they need the picker *and* an image preview) and
+`DeleteItemConfirmDialog` (pure copy, dragged along with them to keep the trio together).
 
 Net: **two** screens *were* convertible, not four — a scope reduction of ~1500 lines against what this
 document previously implied. Both have since been migrated: `HomePane` and `MemorialBriefingPane`.
-**The atomic-pass list is now empty.** Everything left is either the memorial reader's Canvas refactor
-(remaining work #3) or `DetailPane`, which needs platform abstractions before any conversion.
+`DetailPane`'s wall now renders from `commonMain` on every target as well. Everything left there is
+the three dialogs; everything left overall is the memorial reader's Canvas refactor (remaining work
+#3).
 
 ### The four `DetailPane` seams are now shared abstractions
 
@@ -922,12 +929,20 @@ Verified with `./gradlew :shared:compileKotlinDesktop :shared:desktopTest`, incr
 
 1. ~~Migrate `MemorialBriefingPane` using the atomic-pass strategy above.~~ **Done** — see the
    MemorialBriefingPane section. The atomic-pass list is now empty.
-2. Re-platform `DetailPane.kt`. ~~The four Android seams need shared abstractions first.~~ **The
-   abstractions exist now** (`platformImageDecoder`, `platformContentPicker`, `contentImporter`,
-   `writeMarkdownPrefill`) with Android, desktop and iOS implementations, verified on desktop by 44
-   tests. What remains is the conversion of the 1220-line screen itself, plus one host obligation: the
-   Android picker must be installed through `AndroidContentPickerHost`. The iOS picker needs a human
-   to tap it on a simulator before it can be called working.
+2. ~~Re-platform `DetailPane.kt`.~~ **The display half is done**: `shared/.../ui/screens/DetailPane.kt`
+   (647 lines) renders the wall, the filter bar, the empty shelf and the decorative corner on every
+   target, and `ArchiveAssistantRoot` dispatches to it on `AppPane.DETAIL`. What is still in `:app`
+   is the three dialogs — `AddItemDialog`, `ClipboardDialog`, `DeleteItemConfirmDialog`. Their
+   platform seams (`platformImageDecoder`, `platformContentPicker`, `contentImporter`,
+   `writeMarkdownPrefill`) already exist with Android, desktop and iOS implementations; what remains
+   is rewriting the dialogs themselves against them. Two host obligations stay open: the Android picker
+   must be installed through `AndroidContentPickerHost`, and the iOS picker needs a human to tap it on
+   a simulator before it can be called working.
+   **One deliberate behaviour change in the port:** the card's image aspect ratio is measured from the
+   painter's `intrinsicSize` rather than from `BitmapFactory.Options(inJustDecodeBounds = true)`.
+   Both read the same already-decoded bitmap for a bundled asset, so the number is the same; the
+   difference is what happens when an asset is *not* bundled — the placeholder is 1×1 and is detected
+   as such, so the card falls back to the estimate instead of cropping a square.
 3. Migrate the Canvas-heavy memorial views (10 files, ~5651 lines, incl. `MemorialFoldView.kt` at
    3661 lines). Treat as a refactor with a performance budget, not a port — the README already lists
    fold/swipe responsiveness as a known problem. `MemorialDemoOverlay.kt` belongs here too: it is a

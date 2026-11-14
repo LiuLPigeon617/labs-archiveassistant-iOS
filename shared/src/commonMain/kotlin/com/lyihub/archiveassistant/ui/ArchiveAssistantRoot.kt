@@ -17,6 +17,7 @@ import com.lyihub.archiveassistant.data.FileAppDataRepository
 import com.lyihub.archiveassistant.domain.AppPane
 import com.lyihub.archiveassistant.state.ArchiveAssistantState
 import com.lyihub.archiveassistant.state.ArchiveAssistantStateStore
+import com.lyihub.archiveassistant.ui.screens.DetailPane
 import com.lyihub.archiveassistant.ui.screens.HomePane
 import com.lyihub.archiveassistant.ui.screens.MemorialBriefingPane
 import com.lyihub.archiveassistant.ui.screens.TOTAL_PENDING_MEMORIALS
@@ -123,6 +124,26 @@ fun ArchiveAssistantRoot(stateStore: ArchiveAssistantStateStore = remember { def
           // absent. The button is still drawn; tapping it does nothing.
           onChooseModelFile = {},
         )
+      } else if (state.selectedPane == AppPane.DETAIL) {
+        // `selectedTopic` is derived from `selectedTopicId`, which survives a save/restore even when
+        // the topic itself was deleted in the meantime. Rendering "not migrated" for that case would
+        // be a lie, but rendering an empty shelf would look like a layout bug — so fall through to
+        // the same message the unmigrated panes use and let the back button take the user home.
+        val topic = state.selectedTopic
+        if (topic != null) {
+          DetailPane(
+            topic = topic,
+            items = state.filteredSelectedTopicItems,
+            searchQuery = state.homeSearchQuery,
+            onBack = stateStore::closePanes,
+            // Opening the reader overlay is still `:app`-only (`ArticleMemorialReaderOverlay`), so the
+            // tap is inert here rather than pretending to open something that does not exist yet.
+            onItemClick = {},
+            showBackButton = true,
+          )
+        } else {
+          NotYetMigratedPane()
+        }
       } else {
         // No other pane is migrated into this module yet. Say so rather than rendering an empty box,
         // which would be indistinguishable from a layout bug.
